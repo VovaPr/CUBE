@@ -13,7 +13,7 @@ A comprehensive T-SQL solution to monitor SQL Server Agent jobs from a central s
 **Central Monitoring Server – `INFRA-MGMT01` (origin\Master)**
 - runs the SQL Agent job **DBA - Common Monitoring Alerts** every 5 minutes
 - the alert job first synchronizes unresolved alerts from active servers listed in `Monitoring.MonitoredServers`
-  by reading each target's `dba_db.Monitoring.FailedJobsAlerts` via linked server
+  by reading each target's `dba_db.Monitoring.FailedJobsAlerts` via direct `OPENROWSET` connection (`ServerName` + `Port`)
 - then executes `Monitoring.SP_SendAlerts` on central data and sends emails
 
 On each **Target Server**:
@@ -122,11 +122,11 @@ USE master; GO
 :r "setup\target\03_create_agent_job.sql"
 ```
 
-### Central Sync Prerequisite: Monitored Targets + Linked Servers
+### Central Sync Prerequisite: Monitored Targets + OPENROWSET
 
 To have the central server query target servers remotely, fill the configuration table
 `dba_db.Monitoring.MonitoredServers` (created by `setup/central/01_create_schema.sql`).
-Each active target must also exist as a SQL Server linked server on central with the same name as `ServerName`.
+The central sync step reads each active target directly using `ServerName` + `Port` from this table.
 
 ```sql
 USE dba_db;
@@ -142,6 +142,17 @@ GO
 ```
 
 The setup script `setup/central/04_create_agent_job.sql` already adds the synchronization step.
+
+Enable ad hoc provider access on central (required by `OPENROWSET`):
+
+```sql
+EXEC sp_configure 'show advanced options', 1;
+RECONFIGURE;
+EXEC sp_configure 'Ad Hoc Distributed Queries', 1;
+RECONFIGURE;
+```
+
+Ensure provider `MSOLEDBSQL` is installed on central SQL Server host.
 
 ## Monitoring Tables
 
@@ -243,12 +254,11 @@ FROM dba_db.Monitoring.MonitoredServers
 ORDER BY ServerName;
 ```
 
-**Check linked servers on central (name should match MonitoredServers.ServerName):**
+**Check Ad Hoc Distributed Queries on central (must be 1):**
 ```sql
-SELECT name, product, data_source
-FROM sys.servers
-WHERE is_linked = 1
-ORDER BY name;
+SELECT CAST(value_in_use AS INT) AS AdHocDistributedQueriesEnabled
+FROM sys.configurations
+WHERE name = 'Ad Hoc Distributed Queries';
 ```
 
 **Check unresolved alerts currently copied to central:**

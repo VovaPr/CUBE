@@ -118,6 +118,7 @@ EXEC sp_add_jobstep
     @subsystem = 'TSQL',
     @command = '
 DECLARE @TargetServer SYSNAME;
+DECLARE @TargetPort INT;
 DECLARE @Sql NVARCHAR(MAX);
 
 CREATE TABLE #RemoteUnresolvedAlerts (
@@ -133,38 +134,49 @@ CREATE TABLE #PolledServers (
 );
 
 DECLARE cur CURSOR LOCAL FAST_FORWARD FOR
-    SELECT ServerName
+    SELECT ServerName, Port
     FROM dba_db.Monitoring.MonitoredServers
     WHERE IsActive = 1;
 
 OPEN cur;
-FETCH NEXT FROM cur INTO @TargetServer;
+FETCH NEXT FROM cur INTO @TargetServer, @TargetPort;
 
 WHILE @@FETCH_STATUS = 0
 BEGIN
     BEGIN TRY
         SET @Sql = N''
-            SELECT ServerName,
-                   JobName,
-                   FailureCount,
-                   FirstFailureTime,
-                   LastFailureTime
-            FROM dba_db.Monitoring.FailedJobsAlerts
-            WHERE IsResolved = 0;'';
+            SELECT
+                ServerName,
+                JobName,
+                FailureCount,
+                FirstFailureTime,
+                LastFailureTime
+            FROM OPENROWSET(
+                ''''MSOLEDBSQL'''',
+                ''''Server=''+REPLACE(@TargetServer, '''''''', '''''''''''')+'',''+CAST(ISNULL(@TargetPort, 1433) AS NVARCHAR(10))+'';Trusted_Connection=Yes;Encrypt=Yes;TrustServerCertificate=Yes;'''',
+                ''''SELECT
+                    ServerName,
+                    JobName,
+                    FailureCount,
+                    FirstFailureTime,
+                    LastFailureTime
+                  FROM dba_db.Monitoring.FailedJobsAlerts
+                  WHERE IsResolved = 0''''
+            );'';
 
         INSERT INTO #RemoteUnresolvedAlerts (ServerName, JobName, FailureCount, FirstFailureTime, LastFailureTime)
-        EXEC (N''EXEC (N'''''' + REPLACE(@Sql, N'''''''', N'''''''''''''') + N'''''''') AT '' + QUOTENAME(@TargetServer));
+        EXEC sp_executesql @Sql;
 
         IF NOT EXISTS (SELECT 1 FROM #PolledServers WHERE ServerName = @TargetServer)
             INSERT INTO #PolledServers (ServerName) VALUES (@TargetServer);
 
-        PRINT ''Synchronized alerts from '' + @TargetServer;
+        PRINT ''Synchronized alerts from '' + @TargetServer + '':'' + CAST(ISNULL(@TargetPort, 1433) AS NVARCHAR(10));
     END TRY
     BEGIN CATCH
-        PRINT ''Failed to read alerts from '' + @TargetServer + '': '' + ERROR_MESSAGE();
+        PRINT ''Failed to read alerts from '' + @TargetServer + '':'' + CAST(ISNULL(@TargetPort, 1433) AS NVARCHAR(10)) + '': '' + ERROR_MESSAGE();
     END CATCH;
 
-    FETCH NEXT FROM cur INTO @TargetServer;
+    FETCH NEXT FROM cur INTO @TargetServer, @TargetPort;
 END
 
 CLOSE cur;
