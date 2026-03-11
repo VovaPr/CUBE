@@ -36,6 +36,13 @@ BEGIN
 END
 GO
 
-SELECT ServerName, Port, IsActive, CreatedAt, UpdatedAt
-FROM Monitoring.MonitoredServers
-WHERE ServerName = N'RGPSQLDEV01';
+IF OBJECT_ID('Monitoring.MonitoredServers', 'U') IS NOT NULL
+BEGIN
+    SELECT ServerName, Port, IsActive, CreatedAt, UpdatedAt
+    FROM Monitoring.MonitoredServers
+    WHERE ServerName = N'RGPSQLDEV01';
+END
+ELSE
+BEGIN
+    PRINT 'Table Monitoring.MonitoredServers does not exist, final check skipped.';
+END
