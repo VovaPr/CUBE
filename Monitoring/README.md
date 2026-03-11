@@ -12,11 +12,9 @@ A comprehensive T-SQL solution to monitor SQL Server Agent jobs from a central s
 
 **Central Monitoring Server – `INFRA-MGMT01` (origin\Master)**
 - runs the SQL Agent job **DBA - Common Monitoring Alerts** every 5 minutes
-- the job calls `Monitoring.SP_MonitoringJobs`
-- optionally connects (via linked servers or sqlcmd) to each Target Server's `dba_db` database
-  to invoke the same `Monitoring.SP_MonitoringJobs` procedure remotely and then
-  read their `Monitoring.FailedJobsAlerts` tables
-- executes alert logic and sends emails when any target reports failures
+- the alert job first synchronizes unresolved alerts from active servers listed in `Monitoring.MonitoredServers`
+  by reading each target's `dba_db.Monitoring.FailedJobsAlerts` via linked server
+- then executes `Monitoring.SP_SendAlerts` on central data and sends emails
 
 On each **Target Server**:
 - `Monitoring.Jobs` table stores the latest job status for that server
@@ -37,7 +35,9 @@ connect to targets to sample their alert tables and dispatch emails.
   - `03_create_send_alerts_procedure.sql` – defines `Monitoring.SP_SendAlerts`
   - `04_create_agent_job.sql` – creates two jobs:
     - **DBA - Collect Job Status** — runs at **:01** every hour
-    - **DBA - Common Monitoring Alerts** — runs at **:05** every hour
+    - **DBA - Common Monitoring Alerts** — runs at **:05** every hour with 2 steps:
+      1) sync unresolved alerts from targets into central table
+      2) send email from central table
   - `05_add_monitored_server_RGPSQLDEV01_10001.sql` – inserts/updates sample target `RGPSQLDEV01:10001`
 
 - **setup/central/rollback/** – Central rollback scripts:
@@ -122,10 +122,11 @@ USE master; GO
 :r "setup\target\03_create_agent_job.sql"
 ```
 
-### Optional: Central Job Invoking Targets
+### Central Sync Prerequisite: Monitored Targets + Linked Servers
 
 To have the central server query target servers remotely, fill the configuration table
-`dba_db.Monitoring.MonitoredServers` (created by `setup/central/01_create_schema.sql`) and extend the central job:
+`dba_db.Monitoring.MonitoredServers` (created by `setup/central/01_create_schema.sql`).
+Each active target must also exist as a SQL Server linked server on central with the same name as `ServerName`.
 
 ```sql
 USE dba_db;
@@ -140,33 +141,7 @@ VALUES ('SERVER2', 1433, 1);
 GO
 ```
 
-Then add a step to the central job to invoke the procedure on each target:
-
-```sql
--- Example T-SQL to invoke targets (add as a job step):
-DECLARE @target SYSNAME;
-DECLARE @cmd NVARCHAR(MAX);
-DECLARE cur CURSOR LOCAL FAST_FORWARD FOR
-  SELECT ServerName FROM Monitoring.MonitoredServers WHERE IsActive = 1;
-
-OPEN cur;
-FETCH NEXT FROM cur INTO @target;
-WHILE @@FETCH_STATUS = 0
-BEGIN
-    BEGIN TRY
-    -- Requires linked server with the same name as ServerName
-    SET @cmd = N'EXEC (N''EXEC dba_db.Monitoring.SP_MonitoringJobs;'') AT ' + QUOTENAME(@target) + N';';
-    EXEC sp_executesql @cmd;
-        PRINT 'Processed ' + @target;
-    END TRY
-    BEGIN CATCH
-        PRINT 'Error processing ' + @target + ': ' + ERROR_MESSAGE();
-    END CATCH
-    FETCH NEXT FROM cur INTO @target;
-END
-CLOSE cur;
-DEALLOCATE cur;
-```
+The setup script `setup/central/04_create_agent_job.sql` already adds the synchronization step.
 
 ## Monitoring Tables
 
@@ -249,6 +224,39 @@ JOIN msdb.dbo.sysjobs sj
   ON sjh.job_id = sj.job_id
 WHERE sj.name = 'DBA - Common Monitoring Alerts'
 ORDER BY sjh.run_date DESC;
+```
+
+**Check central alert job steps (must be 2 steps):**
+```sql
+SELECT s.step_id, s.step_name, s.on_success_action, s.on_success_step_id
+FROM msdb.dbo.sysjobsteps s
+JOIN msdb.dbo.sysjobs j
+  ON j.job_id = s.job_id
+WHERE j.name = 'DBA - Common Monitoring Alerts'
+ORDER BY s.step_id;
+```
+
+**Check monitored targets configured on central:**
+```sql
+SELECT ServerName, Port, IsActive, UpdatedAt
+FROM dba_db.Monitoring.MonitoredServers
+ORDER BY ServerName;
+```
+
+**Check linked servers on central (name should match MonitoredServers.ServerName):**
+```sql
+SELECT name, product, data_source
+FROM sys.servers
+WHERE is_linked = 1
+ORDER BY name;
+```
+
+**Check unresolved alerts currently copied to central:**
+```sql
+SELECT ServerName, JobName, FailureCount, FirstFailureTime, LastFailureTime, AlertSentTime
+FROM dba_db.Monitoring.FailedJobsAlerts
+WHERE IsResolved = 0
+ORDER BY LastFailureTime DESC;
 ```
 
 ## Troubleshooting

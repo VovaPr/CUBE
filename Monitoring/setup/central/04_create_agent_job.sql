@@ -105,7 +105,7 @@ GO
 EXEC sp_add_job
     @job_name = 'DBA - Common Monitoring Alerts',
     @enabled = 1,
-    @description = 'Sends email alerts for active failed jobs. Runs at :05 every hour.',
+    @description = 'Synchronizes unresolved alerts from monitored target servers and sends email notifications. Runs at :05 every hour.',
     @owner_login_name = 'sa',
     @notify_level_email = 2,
     @notify_email_operator_name = N'DEVMonitoring';
@@ -113,8 +113,116 @@ GO
 
 EXEC sp_add_jobstep
     @job_name = 'DBA - Common Monitoring Alerts',
-    @step_name = 'Send Email Alerts',
+    @step_name = 'Sync Target Alerts To Central',
     @step_id = 1,
+    @subsystem = 'TSQL',
+    @command = '
+DECLARE @TargetServer SYSNAME;
+DECLARE @Sql NVARCHAR(MAX);
+
+CREATE TABLE #RemoteUnresolvedAlerts (
+    ServerName NVARCHAR(256) NOT NULL,
+    JobName NVARCHAR(256) NOT NULL,
+    FailureCount INT NULL,
+    FirstFailureTime DATETIME2 NULL,
+    LastFailureTime DATETIME2 NULL
+);
+
+CREATE TABLE #PolledServers (
+    ServerName SYSNAME NOT NULL PRIMARY KEY
+);
+
+DECLARE cur CURSOR LOCAL FAST_FORWARD FOR
+    SELECT ServerName
+    FROM dba_db.Monitoring.MonitoredServers
+    WHERE IsActive = 1;
+
+OPEN cur;
+FETCH NEXT FROM cur INTO @TargetServer;
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    BEGIN TRY
+        SET @Sql = N''
+            SELECT ServerName,
+                   JobName,
+                   FailureCount,
+                   FirstFailureTime,
+                   LastFailureTime
+            FROM dba_db.Monitoring.FailedJobsAlerts
+            WHERE IsResolved = 0;'';
+
+        INSERT INTO #RemoteUnresolvedAlerts (ServerName, JobName, FailureCount, FirstFailureTime, LastFailureTime)
+        EXEC (N''EXEC (N'''''' + REPLACE(@Sql, N'''''''', N'''''''''''''') + N'''''''') AT '' + QUOTENAME(@TargetServer));
+
+        IF NOT EXISTS (SELECT 1 FROM #PolledServers WHERE ServerName = @TargetServer)
+            INSERT INTO #PolledServers (ServerName) VALUES (@TargetServer);
+
+        PRINT ''Synchronized alerts from '' + @TargetServer;
+    END TRY
+    BEGIN CATCH
+        PRINT ''Failed to read alerts from '' + @TargetServer + '': '' + ERROR_MESSAGE();
+    END CATCH;
+
+    FETCH NEXT FROM cur INTO @TargetServer;
+END
+
+CLOSE cur;
+DEALLOCATE cur;
+
+MERGE dba_db.Monitoring.FailedJobsAlerts AS dst
+USING #RemoteUnresolvedAlerts AS src
+    ON dst.ServerName = src.ServerName
+   AND dst.JobName = src.JobName
+   AND dst.IsResolved = 0
+WHEN MATCHED THEN
+    UPDATE SET
+        dst.FailureCount = ISNULL(src.FailureCount, dst.FailureCount),
+        dst.FirstFailureTime = CASE
+            WHEN src.FirstFailureTime IS NULL THEN dst.FirstFailureTime
+            WHEN dst.FirstFailureTime IS NULL THEN src.FirstFailureTime
+            WHEN src.FirstFailureTime < dst.FirstFailureTime THEN src.FirstFailureTime
+            ELSE dst.FirstFailureTime
+        END,
+        dst.LastFailureTime = ISNULL(src.LastFailureTime, dst.LastFailureTime)
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (ServerName, JobName, FailureCount, FirstFailureTime, LastFailureTime, AlertSentTime, IsResolved)
+    VALUES (
+        src.ServerName,
+        src.JobName,
+        ISNULL(src.FailureCount, 1),
+        ISNULL(src.FirstFailureTime, GETDATE()),
+        ISNULL(src.LastFailureTime, GETDATE()),
+        NULL,
+        0
+    );
+
+UPDATE dst
+SET dst.IsResolved = 1,
+    dst.ResolutionTime = GETDATE()
+FROM dba_db.Monitoring.FailedJobsAlerts AS dst
+JOIN #PolledServers AS ps
+  ON ps.ServerName = dst.ServerName
+LEFT JOIN #RemoteUnresolvedAlerts AS src
+  ON src.ServerName = dst.ServerName
+ AND src.JobName = dst.JobName
+WHERE dst.IsResolved = 0
+  AND src.JobName IS NULL;
+
+PRINT ''Target alert synchronization completed.'';
+',
+    @database_name = 'dba_db',
+    @retry_attempts = 3,
+    @retry_interval = 1,
+    @on_success_action = 3,
+    @on_success_step_id = 2,
+    @on_fail_action = 2;
+GO
+
+EXEC sp_add_jobstep
+    @job_name = 'DBA - Common Monitoring Alerts',
+    @step_name = 'Send Email Alerts',
+    @step_id = 2,
     @subsystem = 'TSQL',
     @command = 'EXEC dba_db.Monitoring.SP_SendAlerts @EmailRecipient = ''559c4de8.cube.global@emea.teams.ms'', @MailProfile = ''SQLAlerts''',
     @database_name = 'dba_db',
