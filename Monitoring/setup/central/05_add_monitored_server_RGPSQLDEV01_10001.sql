@@ -5,11 +5,8 @@
 USE master;
 GO
 
-DECLARE @LinkedServerName SYSNAME    = N'LS_RGPSQLDEV01_10001_DBA_DB';
+DECLARE @LinkedServerName SYSNAME      = N'LS_RGPSQLDEV01_10001_DBA_DB';
 DECLARE @DataSource      NVARCHAR(256) = N'rgpsqldev01.cubecloud.local,10001';
--- !! Fill in the SQL login that exists on the target server !!
-DECLARE @RemoteUser      NVARCHAR(128) = N'<sql_login>';
-DECLARE @RemotePassword  NVARCHAR(128) = N'<password>';
 
 IF EXISTS (
     SELECT 1
@@ -37,13 +34,12 @@ EXEC master.dbo.sp_serveroption
     @optname = N'data access',
     @optvalue = N'true';
 
--- Map all local logins to the specified remote SQL login (avoids Windows auth double-hop / ANONYMOUS LOGON)
+-- Use the SQL Agent service account's Windows identity to connect to the remote server.
+-- The service account must have a login and SELECT on dba_db.Monitoring.FailedJobsAlerts on the target.
 EXEC master.dbo.sp_addlinkedsrvlogin
-    @rmtsrvname  = @LinkedServerName,
-    @useself     = 'FALSE',
-    @locallogin  = NULL,
-    @rmtuser     = @RemoteUser,
-    @rmtpassword = @RemotePassword;
+    @rmtsrvname = @LinkedServerName,
+    @useself    = 'TRUE',
+    @locallogin = NULL;
 
 PRINT 'Created linked server: ' + @LinkedServerName + ' -> ' + @DataSource + ' (catalog=dba_db)';
 
