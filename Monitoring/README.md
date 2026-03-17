@@ -152,7 +152,7 @@ EXEC master.dbo.sp_addlinkedserver
     @server = N'LS_RGPSQLDEV01_10001_DBA_DB',
     @provider = N'MSOLEDBSQL',
     @datasrc = N'rgpsqldev01.cubecloud.local,10001',
-    @provstr = N'Encrypt=Optional;TrustServerCertificate=Yes;',
+    @provstr = N'Encrypt=yes;TrustServerCertificate=Yes;',
     @catalog = N'dba_db';
 ```
 

@@ -169,7 +169,7 @@ BEGIN
                     LastFailureTime
                 FROM OPENROWSET(
                     ''''MSOLEDBSQL'''',
-                    ''''Server=''+REPLACE(@TargetServer, '''''''', '''''''''''')+'',''+CAST(ISNULL(@TargetPort, 1433) AS NVARCHAR(10))+'';Trusted_Connection=Yes;Encrypt=Optional;TrustServerCertificate=Yes;'''',
+                    ''''Server=''+REPLACE(@TargetServer, '''''''', '''''''''''')+'',''+CAST(ISNULL(@TargetPort, 1433) AS NVARCHAR(10))+'';Trusted_Connection=Yes;Encrypt=yes;TrustServerCertificate=Yes;'''',
                     ''''SELECT
                         ServerName,
                         JobName,

@@ -26,7 +26,7 @@ EXEC master.dbo.sp_addlinkedserver
     @srvproduct = N'',
     @provider = N'MSOLEDBSQL',
     @datasrc = @DataSource,
-    @provstr = N'Encrypt=Optional;TrustServerCertificate=Yes;',
+    @provstr = N'Encrypt=yes;TrustServerCertificate=Yes;',
     @catalog = N'dba_db';
 
 EXEC master.dbo.sp_serveroption
