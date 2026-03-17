@@ -48,41 +48,30 @@ BEGIN
 END
 GO
 
--- Monitored target servers list (used by central job extensions)
--- Legacy support: if dbo.MonitoredServers exists, move it into Monitoring schema.
-IF OBJECT_ID('Monitoring.MonitoredServers', 'U') IS NULL
+-- Aggregated server state/registration table used by push workflows.
+IF OBJECT_ID('Monitoring.Servers', 'U') IS NULL
 BEGIN
-    IF OBJECT_ID('dbo.MonitoredServers', 'U') IS NOT NULL
-    BEGIN
-        EXEC('ALTER SCHEMA Monitoring TRANSFER dbo.MonitoredServers');
-    END
-    ELSE
-    BEGIN
-        CREATE TABLE Monitoring.MonitoredServers (
-            ServerName SYSNAME NOT NULL PRIMARY KEY,
-            Port INT NOT NULL CONSTRAINT DF_MonitoredServers_Port DEFAULT (1433),
-            LinkedServerName SYSNAME NULL,
-            IsActive BIT NOT NULL DEFAULT 1,
-            CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
-            UpdatedAt DATETIME2 NULL
-        );
-    END
+    CREATE TABLE Monitoring.Servers (
+        ServerName NVARCHAR(256) NOT NULL PRIMARY KEY,
+        CentralServerName NVARCHAR(256) NOT NULL,
+        IsActive BIT NOT NULL CONSTRAINT DF_Servers_IsActive DEFAULT (1),
+        CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
+        ModifiedAt DATETIME2 NOT NULL DEFAULT GETDATE()
+    );
 END
 
--- Backward compatibility: if table existed without Port, add it.
-IF OBJECT_ID('Monitoring.MonitoredServers', 'U') IS NOT NULL
-    AND COL_LENGTH('Monitoring.MonitoredServers', 'Port') IS NULL
+IF NOT EXISTS (SELECT 1 FROM Monitoring.Servers WHERE ServerName = N'INFRA-MGMT01')
 BEGIN
-    ALTER TABLE Monitoring.MonitoredServers
-        ADD Port INT NOT NULL CONSTRAINT DF_MonitoredServers_Port DEFAULT (1433) WITH VALUES;
+    INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive)
+    VALUES (N'INFRA-MGMT01', N'INFRA-MGMT01.cubecloud.local', 1);
 END
-
--- Backward compatibility: allow central sync to prefer linked servers when configured.
-IF OBJECT_ID('Monitoring.MonitoredServers', 'U') IS NOT NULL
-    AND COL_LENGTH('Monitoring.MonitoredServers', 'LinkedServerName') IS NULL
+ELSE
 BEGIN
-    ALTER TABLE Monitoring.MonitoredServers
-        ADD LinkedServerName SYSNAME NULL;
+    UPDATE Monitoring.Servers
+    SET CentralServerName = N'INFRA-MGMT01.cubecloud.local',
+        IsActive = 1,
+        ModifiedAt = GETDATE()
+    WHERE ServerName = N'INFRA-MGMT01';
 END
 GO
 
@@ -95,5 +84,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Jobs_LastRunDate')
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_FailedJobsAlerts_AlertSentTime')
     CREATE INDEX IX_FailedJobsAlerts_AlertSentTime ON Monitoring.FailedJobsAlerts(AlertSentTime);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Servers_CentralServerName')
+    CREATE INDEX IX_Servers_CentralServerName ON Monitoring.Servers(CentralServerName);
 
 PRINT 'Central monitoring schema created successfully.';

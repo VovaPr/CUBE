@@ -17,6 +17,24 @@ BEGIN
     DECLARE @ServerName NVARCHAR(256) = @@SERVERNAME;
     
     BEGIN TRY
+        -- Keep one aggregated server row fresh on target.
+        MERGE Monitoring.Servers AS s
+        USING (
+            SELECT
+                CAST(@ServerName AS NVARCHAR(256)) AS ServerName,
+                CAST(N'INFRA-MGMT01.cubecloud.local' AS NVARCHAR(256)) AS CentralServerName,
+                CAST(1 AS BIT) AS IsActive
+        ) AS src
+            ON s.ServerName = src.ServerName
+        WHEN MATCHED THEN
+            UPDATE SET
+                s.CentralServerName = src.CentralServerName,
+                s.IsActive = src.IsActive,
+                s.ModifiedAt = GETDATE()
+        WHEN NOT MATCHED THEN
+            INSERT (ServerName, CentralServerName, IsActive)
+            VALUES (src.ServerName, src.CentralServerName, src.IsActive);
+
         -- Step 1: Collect Job Status from msdb
         MERGE INTO Monitoring.Jobs j
         USING (

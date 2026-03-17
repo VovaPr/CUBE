@@ -58,6 +58,46 @@ BEGIN
 END
 GO
 
+-- One aggregated server table updated locally on every target run and pushed to central.
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Servers' AND schema_id = SCHEMA_ID('Monitoring'))
+BEGIN
+    CREATE TABLE Monitoring.Servers (
+        ServerName NVARCHAR(256) NOT NULL PRIMARY KEY,
+        CentralServerName NVARCHAR(256) NOT NULL,
+        IsActive BIT NOT NULL CONSTRAINT DF_Servers_IsActive DEFAULT (1),
+        CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
+        ModifiedAt DATETIME2 NOT NULL DEFAULT GETDATE()
+    );
+    PRINT 'Table Monitoring.Servers created.';
+END
+ELSE
+BEGIN
+    PRINT 'Table Monitoring.Servers already exists.';
+END
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM Monitoring.Servers
+    WHERE ServerName = @@SERVERNAME
+)
+BEGIN
+    INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive)
+    VALUES (@@SERVERNAME, N'INFRA-MGMT01.cubecloud.local', 1);
+
+    PRINT 'Server registration row added for ' + @@SERVERNAME;
+END
+ELSE
+BEGIN
+    UPDATE Monitoring.Servers
+    SET CentralServerName = N'INFRA-MGMT01.cubecloud.local',
+        IsActive = 1,
+        ModifiedAt = GETDATE()
+    WHERE ServerName = @@SERVERNAME;
+
+    PRINT 'Server registration row updated for ' + @@SERVERNAME;
+END
+GO
+
 -- Create indexes
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Jobs_ServerName')
     CREATE INDEX IX_Jobs_ServerName ON Monitoring.Jobs(ServerName);
@@ -67,5 +107,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Jobs_LastRunDate')
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_FailedJobsAlerts_AlertSentTime')
     CREATE INDEX IX_FailedJobsAlerts_AlertSentTime ON Monitoring.FailedJobsAlerts(AlertSentTime);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Servers_CentralServerName')
+    CREATE INDEX IX_Servers_CentralServerName ON Monitoring.Servers(CentralServerName);
 
 PRINT 'Target monitoring schema created successfully on ' + @@SERVERNAME;
