@@ -61,6 +61,7 @@ BEGIN
         CREATE TABLE Monitoring.MonitoredServers (
             ServerName SYSNAME NOT NULL PRIMARY KEY,
             Port INT NOT NULL CONSTRAINT DF_MonitoredServers_Port DEFAULT (1433),
+            LinkedServerName SYSNAME NULL,
             IsActive BIT NOT NULL DEFAULT 1,
             CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
             UpdatedAt DATETIME2 NULL
@@ -74,6 +75,14 @@ IF OBJECT_ID('Monitoring.MonitoredServers', 'U') IS NOT NULL
 BEGIN
     ALTER TABLE Monitoring.MonitoredServers
         ADD Port INT NOT NULL CONSTRAINT DF_MonitoredServers_Port DEFAULT (1433) WITH VALUES;
+END
+
+-- Backward compatibility: allow central sync to prefer linked servers when configured.
+IF OBJECT_ID('Monitoring.MonitoredServers', 'U') IS NOT NULL
+    AND COL_LENGTH('Monitoring.MonitoredServers', 'LinkedServerName') IS NULL
+BEGIN
+    ALTER TABLE Monitoring.MonitoredServers
+        ADD LinkedServerName SYSNAME NULL;
 END
 GO
 

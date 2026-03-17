@@ -119,6 +119,7 @@ EXEC sp_add_jobstep
     @command = '
 DECLARE @TargetServer SYSNAME;
 DECLARE @TargetPort INT;
+DECLARE @LinkedServerName SYSNAME;
 DECLARE @Sql NVARCHAR(MAX);
 
 CREATE TABLE #RemoteUnresolvedAlerts (
@@ -134,35 +135,51 @@ CREATE TABLE #PolledServers (
 );
 
 DECLARE cur CURSOR LOCAL FAST_FORWARD FOR
-    SELECT ServerName, Port
+    SELECT ServerName, Port, LinkedServerName
     FROM dba_db.Monitoring.MonitoredServers
     WHERE IsActive = 1;
 
 OPEN cur;
-FETCH NEXT FROM cur INTO @TargetServer, @TargetPort;
+FETCH NEXT FROM cur INTO @TargetServer, @TargetPort, @LinkedServerName;
 
 WHILE @@FETCH_STATUS = 0
 BEGIN
     BEGIN TRY
-        SET @Sql = N''
-            SELECT
-                ServerName,
-                JobName,
-                FailureCount,
-                FirstFailureTime,
-                LastFailureTime
-            FROM OPENROWSET(
-                ''''MSOLEDBSQL'''',
-                ''''Server=''+REPLACE(@TargetServer, '''''''', '''''''''''')+'',''+CAST(ISNULL(@TargetPort, 1433) AS NVARCHAR(10))+'';Trusted_Connection=Yes;Encrypt=Yes;TrustServerCertificate=Yes;'''',
-                ''''SELECT
+        IF NULLIF(@LinkedServerName, N'''') IS NOT NULL
+           AND EXISTS (SELECT 1 FROM sys.servers WHERE name = @LinkedServerName)
+        BEGIN
+            SET @Sql = N''
+                SELECT
                     ServerName,
                     JobName,
                     FailureCount,
                     FirstFailureTime,
                     LastFailureTime
-                  FROM dba_db.Monitoring.FailedJobsAlerts
-                  WHERE IsResolved = 0''''
-            );'';
+                FROM '' + QUOTENAME(@LinkedServerName) + N''.[dba_db].[Monitoring].[FailedJobsAlerts]
+                WHERE IsResolved = 0;'';
+        END
+        ELSE
+        BEGIN
+            SET @Sql = N''
+                SELECT
+                    ServerName,
+                    JobName,
+                    FailureCount,
+                    FirstFailureTime,
+                    LastFailureTime
+                FROM OPENROWSET(
+                    ''''MSOLEDBSQL'''',
+                    ''''Server=''+REPLACE(@TargetServer, '''''''', '''''''''''')+'',''+CAST(ISNULL(@TargetPort, 1433) AS NVARCHAR(10))+'';Trusted_Connection=Yes;Encrypt=Optional;TrustServerCertificate=Yes;'''',
+                    ''''SELECT
+                        ServerName,
+                        JobName,
+                        FailureCount,
+                        FirstFailureTime,
+                        LastFailureTime
+                      FROM dba_db.Monitoring.FailedJobsAlerts
+                      WHERE IsResolved = 0''''
+                );'';
+        END
 
         INSERT INTO #RemoteUnresolvedAlerts (ServerName, JobName, FailureCount, FirstFailureTime, LastFailureTime)
         EXEC sp_executesql @Sql;
@@ -170,13 +187,26 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM #PolledServers WHERE ServerName = @TargetServer)
             INSERT INTO #PolledServers (ServerName) VALUES (@TargetServer);
 
-        PRINT ''Synchronized alerts from '' + @TargetServer + '':'' + CAST(ISNULL(@TargetPort, 1433) AS NVARCHAR(10));
+        IF NULLIF(@LinkedServerName, N'''') IS NOT NULL
+           AND EXISTS (SELECT 1 FROM sys.servers WHERE name = @LinkedServerName)
+        BEGIN
+            PRINT ''Synchronized alerts from linked server '' + @LinkedServerName + '' for '' + @TargetServer;
+        END
+        ELSE
+        BEGIN
+            PRINT ''Synchronized alerts from '' + @TargetServer + '':'' + CAST(ISNULL(@TargetPort, 1433) AS NVARCHAR(10));
+        END
     END TRY
     BEGIN CATCH
-        PRINT ''Failed to read alerts from '' + @TargetServer + '':'' + CAST(ISNULL(@TargetPort, 1433) AS NVARCHAR(10)) + '': '' + ERROR_MESSAGE();
+        PRINT ''Failed to read alerts from '' + @TargetServer
+            + CASE
+                WHEN NULLIF(@LinkedServerName, N'''') IS NOT NULL THEN '' (linked server '' + @LinkedServerName + '')''
+                ELSE '':'' + CAST(ISNULL(@TargetPort, 1433) AS NVARCHAR(10))
+              END
+            + '': '' + ERROR_MESSAGE();
     END CATCH;
 
-    FETCH NEXT FROM cur INTO @TargetServer, @TargetPort;
+    FETCH NEXT FROM cur INTO @TargetServer, @TargetPort, @LinkedServerName;
 END
 
 CLOSE cur;

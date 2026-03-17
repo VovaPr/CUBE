@@ -13,7 +13,8 @@ A comprehensive T-SQL solution to monitor SQL Server Agent jobs from a central s
 **Central Monitoring Server – `INFRA-MGMT01` (origin\Master)**
 - runs the SQL Agent job **DBA - Common Monitoring Alerts** every 5 minutes
 - the alert job first synchronizes unresolved alerts from active servers listed in `Monitoring.MonitoredServers`
-  by reading each target's `dba_db.Monitoring.FailedJobsAlerts` via direct `OPENROWSET` connection (`ServerName` + `Port`)
+  by reading each target's `dba_db.Monitoring.FailedJobsAlerts` via configured linked server when available,
+  otherwise via direct `OPENROWSET` connection (`ServerName` + `Port`)
 - then executes `Monitoring.SP_SendAlerts` on central data and sends emails
 
 On each **Target Server**:
@@ -38,14 +39,14 @@ connect to targets to sample their alert tables and dispatch emails.
     - **DBA - Common Monitoring Alerts** — runs at **:05** every hour with 2 steps:
       1) sync unresolved alerts from targets into central table
       2) send email from central table
-  - `05_add_monitored_server_RGPSQLDEV01_10001.sql` – inserts/updates sample target `RGPSQLDEV01:10001`
+  - `05_add_monitored_server_RGPSQLDEV01_10001.sql` – creates sample linked server and inserts/updates sample target `RGPSQLDEV01:10001`
 
 - **setup/central/rollback/** – Central rollback scripts:
   - `01_rollback_agent_job.sql` – removes central jobs and operator
   - `02_rollback_send_alerts_procedure.sql` – drops `Monitoring.SP_SendAlerts`
   - `03_rollback_stored_procedure.sql` – drops `Monitoring.SP_MonitoringJobs`
   - `04_rollback_schema.sql` – drops monitoring tables and schema
-  - `05_rollback_monitored_server_RGPSQLDEV01_10001.sql` – removes sample target `RGPSQLDEV01:10001` (run before `04_rollback_schema.sql`)
+  - `05_rollback_monitored_server_RGPSQLDEV01_10001.sql` – removes sample target `RGPSQLDEV01:10001` and drops its linked server (run before `04_rollback_schema.sql`)
 
 - **setup/target/** – Target server setup (all monitored servers):
   - `01_create_schema.sql` – creates `Monitoring` schema and tables
@@ -122,28 +123,40 @@ USE master; GO
 :r "setup\target\03_create_agent_job.sql"
 ```
 
-### Central Sync Prerequisite: Monitored Targets + OPENROWSET
+### Central Sync Prerequisite: Monitored Targets + Linked Server or OPENROWSET
 
 To have the central server query target servers remotely, fill the configuration table
 `dba_db.Monitoring.MonitoredServers` (created by `setup/central/01_create_schema.sql`).
-The central sync step reads each active target directly using `ServerName` + `Port` from this table.
+The central sync step prefers `LinkedServerName` when configured; otherwise it reads each active target directly using `ServerName` + `Port` from this table.
 
 ```sql
 USE dba_db;
 GO
 -- Insert your target servers
-INSERT INTO Monitoring.MonitoredServers (ServerName, Port, IsActive)
-VALUES ('SERVER1', 1433, 1);
+INSERT INTO Monitoring.MonitoredServers (ServerName, Port, LinkedServerName, IsActive)
+VALUES ('SERVER1', 1433, 'LS_SERVER1_DBA_DB', 1);
 
-INSERT INTO Monitoring.MonitoredServers (ServerName, Port, IsActive)
-VALUES ('SERVER2', 1433, 1);
+INSERT INTO Monitoring.MonitoredServers (ServerName, Port, LinkedServerName, IsActive)
+VALUES ('SERVER2', 1433, NULL, 1);
 -- ... more servers
 GO
 ```
 
 The setup script `setup/central/04_create_agent_job.sql` already adds the synchronization step.
 
-Enable ad hoc provider access on central (required by `OPENROWSET`):
+Sample linked server for `RGPSQLDEV01:10001` is created by `setup/central/05_add_monitored_server_RGPSQLDEV01_10001.sql`
+with:
+
+```sql
+EXEC master.dbo.sp_addlinkedserver
+    @server = N'LS_RGPSQLDEV01_10001_DBA_DB',
+    @provider = N'MSOLEDBSQL',
+    @datasrc = N'rgpsqldev01.cubecloud.local,10001',
+    @provstr = N'Encrypt=Optional;TrustServerCertificate=Yes;',
+    @catalog = N'dba_db';
+```
+
+Enable ad hoc provider access on central only if you want the `OPENROWSET` fallback:
 
 ```sql
 EXEC sp_configure 'show advanced options', 1;
