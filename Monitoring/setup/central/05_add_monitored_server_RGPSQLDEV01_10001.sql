@@ -39,6 +39,15 @@ PRINT 'Created linked server: ' + @LinkedServerName + ' -> ' + @DataSource + ' (
 USE dba_db;
 GO
 
+-- Ensure LinkedServerName column exists (idempotent, safe to run on older deployments)
+IF OBJECT_ID('Monitoring.MonitoredServers', 'U') IS NOT NULL
+    AND COL_LENGTH('Monitoring.MonitoredServers', 'LinkedServerName') IS NULL
+BEGIN
+    ALTER TABLE Monitoring.MonitoredServers
+        ADD LinkedServerName SYSNAME NULL;
+END
+GO
+
 DECLARE @ServerName SYSNAME = N'RGPSQLDEV01';
 DECLARE @Port INT = 10001;
 DECLARE @LinkedServerName SYSNAME = N'LS_RGPSQLDEV01_10001_DBA_DB';
