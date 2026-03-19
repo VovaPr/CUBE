@@ -2,7 +2,7 @@
 -- Purpose:
 --   1. Add Central BIT and Target BIT columns to Monitoring.Servers (idempotent)
 --   2. Clear all existing rows and insert a single fresh central row:
---        ServerName        = SERVERPROPERTY('InstanceName')  (dynamic, current server)
+--        ServerName        = MachineName[\InstanceName]  via SERVERPROPERTY (dynamic, current server)
 --        CentralServerName = N'DBMGMT\SQL01,10010'           (hardcoded central endpoint)
 --   3. Set flags: Central=1, Target=0 for the central row
 --
@@ -45,7 +45,8 @@ GO
 
 -- 3. Detect instance name and set hardcoded central endpoint
 DECLARE @InstanceName     NVARCHAR(256) =
-    CAST(ISNULL(CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'MSSQLSERVER') AS NVARCHAR(256));
+    CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
+    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'');
 DECLARE @CentralEndpoint  NVARCHAR(256) = N'DBMGMT\SQL01,10010';
 
 -- 4. Clear all existing rows and insert fresh central row
