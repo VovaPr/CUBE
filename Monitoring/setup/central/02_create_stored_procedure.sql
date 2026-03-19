@@ -229,25 +229,44 @@ BEGIN
                     MERGE Monitoring.FailedJobsAlerts AS dst
                     USING (
                         SELECT
-                            ServerName,
-                            JobName,
-                            FailureCount,
-                            TRY_CONVERT(DATETIME2, FirstFailureTime, 126) AS FirstFailureTime,
-                            TRY_CONVERT(DATETIME2, LastFailureTime, 126) AS LastFailureTime,
-                            TRY_CONVERT(DATETIME2, AlertSentTime, 126) AS AlertSentTime,
-                            IsResolved,
-                            TRY_CONVERT(DATETIME2, ResolutionTime, 126) AS ResolutionTime
-                        FROM OPENJSON(@TargetJson)
-                        WITH (
-                            ServerName NVARCHAR(256) '$.ServerName',
-                            JobName NVARCHAR(256) '$.JobName',
-                            FailureCount INT '$.FailureCount',
-                            FirstFailureTime NVARCHAR(33) '$.FirstFailureTime',
-                            LastFailureTime NVARCHAR(33) '$.LastFailureTime',
-                            AlertSentTime NVARCHAR(33) '$.AlertSentTime',
-                            IsResolved BIT '$.IsResolved',
-                            ResolutionTime NVARCHAR(33) '$.ResolutionTime'
-                        )
+                            d.ServerName,
+                            d.JobName,
+                            d.FailureCount,
+                            d.FirstFailureTime,
+                            d.LastFailureTime,
+                            d.AlertSentTime,
+                            d.IsResolved,
+                            d.ResolutionTime
+                        FROM (
+                            SELECT
+                                x.ServerName,
+                                x.JobName,
+                                x.FailureCount,
+                                TRY_CONVERT(DATETIME2, x.FirstFailureTime, 126) AS FirstFailureTime,
+                                TRY_CONVERT(DATETIME2, x.LastFailureTime, 126) AS LastFailureTime,
+                                TRY_CONVERT(DATETIME2, x.AlertSentTime, 126) AS AlertSentTime,
+                                x.IsResolved,
+                                TRY_CONVERT(DATETIME2, x.ResolutionTime, 126) AS ResolutionTime,
+                                ROW_NUMBER() OVER (
+                                    PARTITION BY x.ServerName, x.JobName
+                                    ORDER BY
+                                        CASE WHEN x.IsResolved = 0 THEN 0 ELSE 1 END,
+                                        TRY_CONVERT(DATETIME2, x.LastFailureTime, 126) DESC,
+                                        TRY_CONVERT(DATETIME2, x.FirstFailureTime, 126) DESC
+                                ) AS rn
+                            FROM OPENJSON(@TargetJson)
+                            WITH (
+                                ServerName NVARCHAR(256) '$.ServerName',
+                                JobName NVARCHAR(256) '$.JobName',
+                                FailureCount INT '$.FailureCount',
+                                FirstFailureTime NVARCHAR(33) '$.FirstFailureTime',
+                                LastFailureTime NVARCHAR(33) '$.LastFailureTime',
+                                AlertSentTime NVARCHAR(33) '$.AlertSentTime',
+                                IsResolved BIT '$.IsResolved',
+                                ResolutionTime NVARCHAR(33) '$.ResolutionTime'
+                            ) AS x
+                        ) AS d
+                        WHERE d.rn = 1
                     ) AS src
                         ON dst.ServerName = src.ServerName
                        AND dst.JobName = src.JobName
