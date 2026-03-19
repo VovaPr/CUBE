@@ -74,13 +74,17 @@ DECLARE @CentralMergeQuery NVARCHAR(MAX) =
   + N'WHEN NOT MATCHED THEN INSERT (ServerName, CentralServerName, IsActive, Central, Target) VALUES (src.ServerName, src.CentralServerName, src.IsActive, src.Central, src.Target); '
   + N'SELECT * FROM Monitoring.Servers WHERE ServerName = N''' + REPLACE(@TargetInstanceName, N'''', N'''''') + N''';';
 
-DECLARE @RunOnTargetCommand VARCHAR(MAX) =
-    'sqlcmd -S ' + CAST(@CentralEndpoint AS VARCHAR(256))
-  + ' -d DBA_DB -E -N -C -b -Q "' + REPLACE(CAST(@CentralMergeQuery AS VARCHAR(MAX)), '"', '\"') + '"';
+DECLARE @RunOnTargetCommand NVARCHAR(MAX) =
+    N'sqlcmd -S ' + @CentralEndpoint
+  + N' -d DBA_DB -E -N -C -b -Q "' + REPLACE(@CentralMergeQuery, N'"', N'\"') + N'"';
 
 SELECT
     N'Run on TARGET' AS Info,
     @RunOnTargetCommand AS TargetCommand;
+
+-- xp_cmdshell requires VARCHAR(8000); convert explicitly via intermediate variable
+DECLARE @xpCmd VARCHAR(8000);
+SET @xpCmd = CAST(@RunOnTargetCommand AS VARCHAR(8000));
 
 -- Enable xp_cmdshell temporarily, execute, then restore original state
 DECLARE @xpWasEnabled BIT = 0;
@@ -94,7 +98,7 @@ BEGIN
 END;
 
 PRINT N'Executing TARGET -> CENTRAL registration...';
-EXEC master..xp_cmdshell @RunOnTargetCommand;
+EXEC master..xp_cmdshell @xpCmd;
 
 IF @xpWasEnabled = 0
 BEGIN
