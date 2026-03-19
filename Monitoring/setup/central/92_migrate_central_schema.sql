@@ -1,8 +1,9 @@
 -- Central Migration Script - Step 92
 -- Purpose:
 --   1. Add Central BIT and Target BIT columns to Monitoring.Servers (idempotent)
---   2. Rename central endpoint from DBMGMT.cubecloud.local\SQL01,10010 → DBMGMT\SQL01,10010
---   3. Set flags: Central=1 for the central row, Target=1 for all other rows
+--   2. Clear all existing rows and insert a single fresh central row
+--      using the server's InstanceName (detected via SERVERPROPERTY)
+--   3. Set flags: Central=1, Target=0 for the central row
 --
 -- NOTE: Column references to Central/Target are wrapped in sp_executesql to
 --       avoid Msg 207 batch-compile error (SQL Server resolves names before
@@ -41,58 +42,31 @@ ELSE
     PRINT 'Column Target already exists, skipping.';
 GO
 
--- 3. Rename old central endpoint ServerName (PK) to new short form (idempotent)
---    Case A: old row exists, new row doesn't → rename
-IF EXISTS     (SELECT 1 FROM Monitoring.Servers WHERE ServerName = N'DBMGMT.cubecloud.local\SQL01,10010')
-   AND NOT EXISTS (SELECT 1 FROM Monitoring.Servers WHERE ServerName = N'DBMGMT\SQL01,10010')
-BEGIN
-    UPDATE Monitoring.Servers
-    SET ServerName        = N'DBMGMT\SQL01,10010',
-        CentralServerName = N'DBMGMT\SQL01,10010',
-        ModifiedAt        = GETDATE()
-    WHERE ServerName = N'DBMGMT.cubecloud.local\SQL01,10010';
-    PRINT 'Renamed central endpoint row ServerName.';
-END
+-- 3. Detect central instance name (matches logic used in steps 90/91)
+DECLARE @CentralInstanceName NVARCHAR(256) =
+    CAST(ISNULL(CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'MSSQLSERVER') AS NVARCHAR(256));
 
---    Case B: both old and new rows exist → remove stale old row
-IF EXISTS (SELECT 1 FROM Monitoring.Servers WHERE ServerName = N'DBMGMT.cubecloud.local\SQL01,10010')
-   AND EXISTS (SELECT 1 FROM Monitoring.Servers WHERE ServerName = N'DBMGMT\SQL01,10010')
-BEGIN
-    DELETE FROM Monitoring.Servers WHERE ServerName = N'DBMGMT.cubecloud.local\SQL01,10010';
-    PRINT 'Removed stale old central endpoint row.';
-END
+-- 4. Clear all existing rows and insert fresh central row
+TRUNCATE TABLE Monitoring.Servers;
+PRINT 'Monitoring.Servers truncated.';
 
--- 4. Update any remaining rows still pointing to old CentralServerName
-UPDATE Monitoring.Servers
-SET CentralServerName = N'DBMGMT\SQL01,10010',
-    ModifiedAt        = GETDATE()
-WHERE CentralServerName = N'DBMGMT.cubecloud.local\SQL01,10010';
-
-IF @@ROWCOUNT > 0
-    PRINT 'Updated CentralServerName references to new endpoint.';
+INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive)
+VALUES (@CentralInstanceName, @CentralInstanceName, 1);
+PRINT 'Central row inserted: ' + @CentralInstanceName;
 GO
 
--- 5. Ensure central marker row exists
-IF NOT EXISTS (SELECT 1 FROM Monitoring.Servers WHERE ServerName = N'DBMGMT\SQL01,10010')
-BEGIN
-    INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive)
-    VALUES (N'DBMGMT\SQL01,10010', N'DBMGMT\SQL01,10010', 1);
-    PRINT 'Central marker row inserted.';
-END
-GO
-
--- 6. Set Central / Target flags
+-- 5. Set Central/Target flags on the central row
 --    Wrapped in sp_executesql to avoid Msg 207 if columns were just added above
 EXEC sp_executesql N'
 UPDATE Monitoring.Servers
-SET Central    = CASE WHEN ServerName = N''DBMGMT\SQL01,10010'' THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END,
-    Target     = CASE WHEN ServerName = N''DBMGMT\SQL01,10010'' THEN CAST(0 AS BIT) ELSE CAST(1 AS BIT) END,
+SET Central    = CAST(1 AS BIT),
+    Target     = CAST(0 AS BIT),
     ModifiedAt = GETDATE();
-PRINT ''Central/Target flags updated.'';
+PRINT ''Central/Target flags set.'';
 ';
 GO
 
--- 7. Final verification (sp_executesql so new columns are resolved at runtime)
+-- 6. Final verification (sp_executesql so new columns are resolved at runtime)
 EXEC sp_executesql N'
 SELECT ServerName, CentralServerName, Central, Target, IsActive, ModifiedAt
 FROM Monitoring.Servers
