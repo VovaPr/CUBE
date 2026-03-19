@@ -82,18 +82,6 @@ SELECT
     N'Run on TARGET' AS Info,
     @RunOnTargetCommand AS TargetCommand;
 
-DECLARE @xpCmdShellEnabled BIT = 0;
-SELECT @xpCmdShellEnabled = CAST(value_in_use AS BIT)
-FROM sys.configurations
-WHERE name = N'xp_cmdshell';
-
-IF @xpCmdShellEnabled = 1
-BEGIN
-    PRINT N'xp_cmdshell is enabled. Executing TARGET -> CENTRAL registration now...';
-    EXEC master..xp_cmdshell @RunOnTargetCommand;
-END
-ELSE
-BEGIN
-    PRINT N'xp_cmdshell is disabled. Run the command from result set manually on TARGET.';
-END;
+PRINT N'Executing TARGET -> CENTRAL registration...';
+EXEC master..xp_cmdshell @RunOnTargetCommand;
 GO
