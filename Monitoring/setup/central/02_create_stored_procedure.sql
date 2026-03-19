@@ -138,7 +138,10 @@ BEGIN
     DECLARE @xpWasEnabled BIT = 0;
     DECLARE @HadError BIT;
 
-    DECLARE @Output TABLE (OutputLine NVARCHAR(4000));
+    DECLARE @Output TABLE (
+        LineNo INT IDENTITY(1,1) PRIMARY KEY,
+        OutputLine NVARCHAR(4000)
+    );
 
     INSERT INTO Monitoring.TargetPullLog (RunID, TargetServer, Stage, IsSuccess, Message)
     VALUES (@RunID, NULL, N'RUN_START', 1, N'Starting target pull run.');
@@ -169,11 +172,24 @@ BEGIN
                         SET @RunOnTargetQuery =
                                 N'SET NOCOUNT ON; '
                             + N'EXEC dba_db.Monitoring.SP_CollectJobs; '
-                            + N'EXEC dba_db.Monitoring.SP_RefreshFailedJobsAlerts;';
+                            + N'EXEC dba_db.Monitoring.SP_RefreshFailedJobsAlerts; '
+                            + N'PRINT N''__JSON_BEGIN__''; '
+                            + N'SELECT '
+                            + N'    ServerName, '
+                            + N'    JobName, '
+                            + N'    FailureCount, '
+                            + N'    CONVERT(NVARCHAR(33), FirstFailureTime, 126) AS FirstFailureTime, '
+                            + N'    CONVERT(NVARCHAR(33), LastFailureTime, 126) AS LastFailureTime, '
+                            + N'    CONVERT(NVARCHAR(33), AlertSentTime, 126) AS AlertSentTime, '
+                            + N'    IsResolved, '
+                            + N'    CONVERT(NVARCHAR(33), ResolutionTime, 126) AS ResolutionTime '
+                            + N'FROM dba_db.Monitoring.FailedJobsAlerts '
+                            + N'FOR JSON PATH, INCLUDE_NULL_VALUES; '
+                            + N'PRINT N''__JSON_END__'';';
 
-            SET @SqlcmdCommand =
-                N'sqlcmd -S "' + REPLACE(@TargetServer, N'"', N'""')
-              + N'" -d DBA_DB -E -N -C -b -Q "' + REPLACE(@RunOnTargetQuery, N'"', N'\"') + N'"';
+                        SET @SqlcmdCommand =
+                                N'sqlcmd -S "' + REPLACE(@TargetServer, N'"', N'""')
+                            + N'" -d DBA_DB -E -N -C -b -h -1 -W -w 65535 -y 0 -Q "' + REPLACE(@RunOnTargetQuery, N'"', N'\"') + N'"';
 
             INSERT INTO Monitoring.TargetPullLog (RunID, TargetServer, Stage, IsSuccess, Message, CommandText)
             VALUES (@RunID, @TargetServer, N'COMMAND', 1, N'Executing target collection and refresh.', @SqlcmdCommand);
@@ -183,6 +199,81 @@ BEGIN
             SET @xpCmd = CAST(@SqlcmdCommand AS VARCHAR(8000));
             INSERT INTO @Output (OutputLine)
             EXEC master..xp_cmdshell @xpCmd;
+
+            DECLARE @JsonStartLine INT;
+            DECLARE @JsonEndLine INT;
+            DECLARE @TargetJson NVARCHAR(MAX) = N'';
+
+            SELECT @JsonStartLine = MIN(LineNo)
+            FROM @Output
+            WHERE LTRIM(RTRIM(OutputLine)) = N'__JSON_BEGIN__';
+
+            SELECT @JsonEndLine = MAX(LineNo)
+            FROM @Output
+            WHERE LTRIM(RTRIM(OutputLine)) = N'__JSON_END__';
+
+            IF @JsonStartLine IS NOT NULL
+               AND @JsonEndLine IS NOT NULL
+               AND @JsonEndLine > @JsonStartLine
+            BEGIN
+                SELECT @TargetJson = COALESCE(@TargetJson, N'') + LTRIM(RTRIM(OutputLine))
+                FROM @Output
+                WHERE LineNo > @JsonStartLine
+                  AND LineNo < @JsonEndLine
+                  AND OutputLine IS NOT NULL
+                  AND LTRIM(RTRIM(OutputLine)) <> N''
+                ORDER BY LineNo;
+
+                IF ISJSON(@TargetJson) = 1
+                BEGIN
+                    MERGE Monitoring.FailedJobsAlerts AS dst
+                    USING (
+                        SELECT
+                            ServerName,
+                            JobName,
+                            FailureCount,
+                            TRY_CONVERT(DATETIME2, FirstFailureTime, 126) AS FirstFailureTime,
+                            TRY_CONVERT(DATETIME2, LastFailureTime, 126) AS LastFailureTime,
+                            TRY_CONVERT(DATETIME2, AlertSentTime, 126) AS AlertSentTime,
+                            IsResolved,
+                            TRY_CONVERT(DATETIME2, ResolutionTime, 126) AS ResolutionTime
+                        FROM OPENJSON(@TargetJson)
+                        WITH (
+                            ServerName NVARCHAR(256) '$.ServerName',
+                            JobName NVARCHAR(256) '$.JobName',
+                            FailureCount INT '$.FailureCount',
+                            FirstFailureTime NVARCHAR(33) '$.FirstFailureTime',
+                            LastFailureTime NVARCHAR(33) '$.LastFailureTime',
+                            AlertSentTime NVARCHAR(33) '$.AlertSentTime',
+                            IsResolved BIT '$.IsResolved',
+                            ResolutionTime NVARCHAR(33) '$.ResolutionTime'
+                        )
+                    ) AS src
+                        ON dst.ServerName = src.ServerName
+                       AND dst.JobName = src.JobName
+                    WHEN MATCHED THEN
+                        UPDATE SET
+                            dst.FailureCount = src.FailureCount,
+                            dst.FirstFailureTime = src.FirstFailureTime,
+                            dst.LastFailureTime = src.LastFailureTime,
+                            dst.AlertSentTime = src.AlertSentTime,
+                            dst.IsResolved = src.IsResolved,
+                            dst.ResolutionTime = src.ResolutionTime
+                    WHEN NOT MATCHED THEN
+                        INSERT (ServerName, JobName, FailureCount, FirstFailureTime, LastFailureTime, AlertSentTime, IsResolved, ResolutionTime)
+                        VALUES (src.ServerName, src.JobName, src.FailureCount, src.FirstFailureTime, src.LastFailureTime, src.AlertSentTime, src.IsResolved, src.ResolutionTime);
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO Monitoring.TargetPullLog (RunID, TargetServer, Stage, IsSuccess, Message)
+                    VALUES (@RunID, @TargetServer, N'JSON_PARSE', 0, N'Unable to parse JSON payload from target output.');
+                END;
+            END
+            ELSE
+            BEGIN
+                INSERT INTO Monitoring.TargetPullLog (RunID, TargetServer, Stage, IsSuccess, Message)
+                VALUES (@RunID, @TargetServer, N'JSON_PARSE', 0, N'JSON payload markers not found in target output.');
+            END;
 
             SET @HadError = CASE
                 WHEN EXISTS (SELECT 1 FROM @Output WHERE OutputLine LIKE N'Sqlcmd: Error:%') THEN 1
