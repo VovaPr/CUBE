@@ -177,7 +177,8 @@ N'    JOIN sys.database_principals r ON r.principal_id = drm.role_principal_id' 
 N'    JOIN sys.database_principals m ON m.principal_id = drm.member_principal_id' + CHAR(13) + CHAR(10) +
 N'    WHERE r.name = N''db_datawriter'' AND m.name = N''' + REPLACE(l.Principal, N'''', N'''''') + N'''' + CHAR(13) + CHAR(10) +
 N')' + CHAR(13) + CHAR(10) +
-N'    EXEC(N''ALTER ROLE [db_datawriter] ADD MEMBER ' + REPLACE(QUOTENAME(l.Principal), N'''', N'''''') + N';'');' + CHAR(13) + CHAR(10)
+N'    EXEC(N''ALTER ROLE [db_datawriter] ADD MEMBER ' + REPLACE(QUOTENAME(l.Principal), N'''', N'''''') + N';'');' + CHAR(13) + CHAR(10) +
+N'GRANT EXECUTE ON SCHEMA::[Monitoring] TO ' + REPLACE(QUOTENAME(l.Principal), N'''', N'''''') + N';' + CHAR(13) + CHAR(10)
 FROM @ServiceLogins l
 ORDER BY l.Principal;
 
