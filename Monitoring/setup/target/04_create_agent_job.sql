@@ -1,4 +1,4 @@
--- Target Server Setup - Step 3
+-- Target Server Setup - Step 4
 -- Create Agent Job on each target server
 -- Job: DBA - Monitoring Alerts
 -- Schedule: Every 1 hour

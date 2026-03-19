@@ -1,8 +1,8 @@
--- Target Server Rollback - Step 3
+-- Target Server Rollback - Step 1
 -- Removes the DBA - Monitoring Alerts Agent job, its schedule,
 -- and the Monitoring operator from the target server.
 --
--- Reverses: 03_create_agent_job.sql
+-- Reverses: 04_create_agent_job.sql
 --   Job:      DBA - Monitoring Alerts
 --   Schedule: DBA - Monitoring Alerts - Every Hour
 --   Operator: Monitoring
@@ -48,4 +48,4 @@ ELSE
     PRINT 'Operator Monitoring does not exist, nothing to delete.';
 GO
 
-PRINT 'Target rollback step 3 complete (job and operator removed from ' + @@SERVERNAME + ').';
+PRINT 'Target rollback step 1 complete (job and operator removed from ' + @@SERVERNAME + ').';

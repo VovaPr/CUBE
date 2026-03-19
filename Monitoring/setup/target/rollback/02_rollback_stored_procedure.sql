@@ -13,4 +13,4 @@ ELSE
     PRINT 'Procedure Monitoring.SP_MonitoringJobs does not exist, nothing to drop.';
 GO
 
-PRINT 'Target rollback step 2 complete.';
+PRINT 'Target rollback step 2 complete (procedure removed from ' + @@SERVERNAME + ').';

@@ -1,4 +1,4 @@
--- Target Server Rollback - Step 1
+-- Target Server Rollback - Step 4
 -- Drops indexes, tables, and Monitoring schema from dba_db on the target server
 -- WARNING: All monitoring data will be permanently deleted.
 
@@ -125,6 +125,6 @@ END
 GO
 
 IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'Monitoring')
-    PRINT 'Target rollback step 1 incomplete: schema Monitoring still exists on ' + @@SERVERNAME + '.';
+    PRINT 'Target rollback step 4 incomplete: schema Monitoring still exists on ' + @@SERVERNAME + '.';
 ELSE
-    PRINT 'Target rollback step 1 complete (schema removed from ' + @@SERVERNAME + ').';
+    PRINT 'Target rollback step 4 complete (schema removed from ' + @@SERVERNAME + ').';

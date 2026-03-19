@@ -44,9 +44,16 @@ already-centralized alerts and dispatches emails.
 
 - **setup/target/** – Target server setup (all monitored servers):
   - `01_create_schema.sql` – creates `Monitoring` schema and tables
-  - `02_create_stored_procedure.sql` – defines `Monitoring.SP_MonitoringJobs` (collect + fill alerts + auto-resolve)
-  - `03_create_agent_job.sql` – creates **DBA - Monitoring Alerts** job (every hour at **:01**)
+  - `02_create_servers_table.sql` – creates/repairs `Monitoring.Servers` and target registration row
+  - `03_create_stored_procedure.sql` – defines `Monitoring.SP_MonitoringJobs` (collect + fill alerts + auto-resolve)
+  - `04_create_agent_job.sql` – creates **DBA - Monitoring Alerts** job (every hour at **:01**)
   - target setup also creates `Monitoring.Servers` with `DBMGMT.cubecloud.local\SQL01,10010`
+
+- **setup/target/rollback/** – Target rollback scripts:
+  - `01_rollback_agent_job.sql` – removes target job and operator
+  - `02_rollback_stored_procedure.sql` – drops `Monitoring.SP_MonitoringJobs`
+  - `03_rollback_servers_table.sql` – drops `Monitoring.Servers` only (use for partial rollback)
+  - `04_rollback_schema.sql` – drops monitoring tables and schema
 
 - **Monitoring/** – miscellaneous utilities
 
@@ -105,19 +112,23 @@ Run the setup scripts **in order** on each target server:
 USE master; GO
 :r "setup\target\01_create_schema.sql"
 
--- 2. Create monitoring procedure
+-- 2. Ensure Monitoring.Servers exists and target row is registered
 USE master; GO
-:r "setup\target\02_create_stored_procedure.sql"
+:r "setup\target\02_create_servers_table.sql"
 
--- 3. Create Agent job (runs every hour)
+-- 3. Create monitoring procedure
 USE master; GO
-:r "setup\target\03_create_agent_job.sql"
+:r "setup\target\03_create_stored_procedure.sql"
+
+-- 4. Create Agent job (runs every hour)
+USE master; GO
+:r "setup\target\04_create_agent_job.sql"
 ```
 
 ### Target Push Prerequisite: One Aggregated Server Table
 
 Each target server stores its own registration/heartbeat row in
-`dba_db.Monitoring.Servers` (created by `setup/target/01_create_schema.sql`).
+`dba_db.Monitoring.Servers` (created by `setup/target/02_create_servers_table.sql`).
 `Monitoring.SP_MonitoringJobs` refreshes `ModifiedAt` on each run.
 
 ```sql

@@ -1,4 +1,4 @@
--- Target Server Setup - Step 2
+-- Target Server Setup - Step 3
 -- Create monitoring stored procedure on each target server
 -- Collects local job statuses and populates local alert table
 
