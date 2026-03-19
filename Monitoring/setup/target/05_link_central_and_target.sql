@@ -1,4 +1,4 @@
--- Utility Script - Step 91 (run on TARGET)
+-- Utility Script - Step 5 (run on TARGET)
 -- Purpose:
 -- 1) Recreate Monitoring.Servers with correct schema on TARGET.
 -- 2) Insert CENTRAL marker row (Central=1, Target=0) and TARGET row (Central=0, Target=1).

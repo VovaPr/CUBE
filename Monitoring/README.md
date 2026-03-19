@@ -48,6 +48,7 @@ already-centralized alerts and dispatches emails.
   - `02_create_servers_table.sql` – recreates `Monitoring.Servers` with the final layout and re-seeds central/target rows
   - `03_create_stored_procedure.sql` – defines `Monitoring.SP_MonitoringJobs` (collect + fill alerts + auto-resolve)
   - `04_create_agent_job.sql` – creates **DBA - Monitoring Alerts** job (every hour at **:01**)
+  - `05_link_central_and_target.sql` – utility script that rebuilds local `Monitoring.Servers` rows and can execute target-to-central registration immediately
   - target setup uses `DBMGMT\SQL01,10010` as `CentralServerName`
 
 - **setup/target/rollback/** – Target rollback scripts:
