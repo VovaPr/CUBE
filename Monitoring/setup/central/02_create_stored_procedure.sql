@@ -187,7 +187,7 @@ BEGIN
 
                         SET @SqlcmdCommand =
                                 N'sqlcmd -S "' + REPLACE(@TargetServer, N'"', N'""')
-                            + N'" -d DBA_DB -E -N -C -b -h -1 -w 65535 -Q "' + REPLACE(@RunOnTargetQuery, N'"', N'\"') + N'"';
+                            + N'" -d DBA_DB -E -N -C -b -w 65535 -y 0 -Q "' + REPLACE(@RunOnTargetQuery, N'"', N'\"') + N'"';
 
             INSERT INTO Monitoring.TargetPullLog (RunID, TargetServer, Stage, IsSuccess, Message, CommandText)
             VALUES (@RunID, @TargetServer, N'COMMAND', 1, N'Reading target FailedJobsAlerts snapshot.', @SqlcmdCommand);
