@@ -8,7 +8,8 @@ IF OBJECT_ID('Monitoring.SP_SendAlerts', 'P') IS NOT NULL
 GO
 
 CREATE PROCEDURE Monitoring.SP_SendAlerts
-    @EmailRecipient NVARCHAR(256) = '559c4de8.cube.global@emea.teams.ms',
+    @OperatorName NVARCHAR(128) = N'Monitoring',
+    @EmailRecipient NVARCHAR(256) = NULL,
     @MailProfile NVARCHAR(256) = 'SQLAlerts'
 AS
 BEGIN
@@ -17,8 +18,25 @@ BEGIN
     DECLARE @FailedJobCount INT;
     DECLARE @AlertBody NVARCHAR(MAX);
     DECLARE @AlertSubject NVARCHAR(256);
+    DECLARE @ResolvedEmailRecipient NVARCHAR(256);
     
     BEGIN TRY
+        SET @ResolvedEmailRecipient = @EmailRecipient;
+
+        IF @ResolvedEmailRecipient IS NULL
+        BEGIN
+            SELECT @ResolvedEmailRecipient = email_address
+            FROM msdb.dbo.sysoperators
+            WHERE name = @OperatorName
+              AND enabled = 1;
+        END;
+
+        IF @ResolvedEmailRecipient IS NULL
+        BEGIN
+            RAISERROR(N'Unable to resolve email recipient from SQL Agent operator.', 16, 1);
+            RETURN;
+        END;
+
         -- Get count of active failed job alerts that haven't been notified in the last 50 minutes
         -- (job runs hourly; 50-min window prevents duplicate emails on manual reruns)
         SELECT @FailedJobCount = COUNT(*)
@@ -47,7 +65,7 @@ BEGIN
             -- Send email using SQL Server Mail
             EXEC msdb.dbo.sp_send_dbmail
                 @profile_name = @MailProfile,
-                @recipients = @EmailRecipient,
+                @recipients = @ResolvedEmailRecipient,
                 @subject = @AlertSubject,
                 @body = @AlertBody,
                 @body_format = 'TEXT';
@@ -58,7 +76,7 @@ BEGIN
             WHERE IsResolved = 0
                 AND (AlertSentTime IS NULL OR AlertSentTime < DATEADD(MINUTE, -50, GETDATE()));
             
-            PRINT 'Email alert sent successfully to: ' + @EmailRecipient;
+            PRINT 'Email alert sent successfully to: ' + @ResolvedEmailRecipient;
         END
         ELSE
         BEGIN

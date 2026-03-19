@@ -116,7 +116,7 @@ EXEC sp_add_jobstep
     @step_name = 'Send Email Alerts',
     @step_id = 1,
     @subsystem = 'TSQL',
-    @command = 'EXEC dba_db.Monitoring.SP_SendAlerts @EmailRecipient = ''559c4de8.cube.global@emea.teams.ms'', @MailProfile = ''SQLAlerts''',
+    @command = 'EXEC dba_db.Monitoring.SP_SendAlerts @OperatorName = ''Monitoring'', @MailProfile = ''SQLAlerts''',
     @database_name = 'dba_db',
     @retry_attempts = 3,
     @retry_interval = 1,
