@@ -82,6 +82,24 @@ SELECT
     N'Run on TARGET' AS Info,
     @RunOnTargetCommand AS TargetCommand;
 
+-- Enable xp_cmdshell temporarily, execute, then restore original state
+DECLARE @xpWasEnabled BIT = 0;
+SELECT @xpWasEnabled = CAST(value_in_use AS BIT)
+FROM sys.configurations WHERE name = N'xp_cmdshell';
+
+IF @xpWasEnabled = 0
+BEGIN
+    EXEC sp_configure 'show advanced options', 1; RECONFIGURE;
+    EXEC sp_configure 'xp_cmdshell', 1;          RECONFIGURE;
+END;
+
 PRINT N'Executing TARGET -> CENTRAL registration...';
 EXEC master..xp_cmdshell @RunOnTargetCommand;
+
+IF @xpWasEnabled = 0
+BEGIN
+    EXEC sp_configure 'xp_cmdshell', 0;          RECONFIGURE;
+    EXEC sp_configure 'show advanced options', 0; RECONFIGURE;
+    PRINT N'xp_cmdshell disabled (restored).';
+END;
 GO
