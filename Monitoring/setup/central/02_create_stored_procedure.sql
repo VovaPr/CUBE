@@ -139,7 +139,7 @@ BEGIN
     DECLARE @HadError BIT;
 
     DECLARE @Output TABLE (
-        LineNo INT IDENTITY(1,1) PRIMARY KEY,
+        OutputOrder INT IDENTITY(1,1) PRIMARY KEY,
         OutputLine NVARCHAR(4000)
     );
 
@@ -204,11 +204,11 @@ BEGIN
             DECLARE @JsonEndLine INT;
             DECLARE @TargetJson NVARCHAR(MAX) = N'';
 
-            SELECT @JsonStartLine = MIN(LineNo)
+            SELECT @JsonStartLine = MIN(OutputOrder)
             FROM @Output
             WHERE LTRIM(RTRIM(OutputLine)) = N'__JSON_BEGIN__';
 
-            SELECT @JsonEndLine = MAX(LineNo)
+            SELECT @JsonEndLine = MAX(OutputOrder)
             FROM @Output
             WHERE LTRIM(RTRIM(OutputLine)) = N'__JSON_END__';
 
@@ -218,11 +218,11 @@ BEGIN
             BEGIN
                 SELECT @TargetJson = COALESCE(@TargetJson, N'') + LTRIM(RTRIM(OutputLine))
                 FROM @Output
-                WHERE LineNo > @JsonStartLine
-                  AND LineNo < @JsonEndLine
+                                WHERE OutputOrder > @JsonStartLine
+                                    AND OutputOrder < @JsonEndLine
                   AND OutputLine IS NOT NULL
                   AND LTRIM(RTRIM(OutputLine)) <> N''
-                ORDER BY LineNo;
+                                ORDER BY OutputOrder;
 
                 IF ISJSON(@TargetJson) = 1
                 BEGIN
