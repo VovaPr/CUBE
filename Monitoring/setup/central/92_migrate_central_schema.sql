@@ -1,78 +1,52 @@
 -- Central Migration Script - Step 92
 -- Purpose:
---   1. Add Central BIT and Target BIT columns to Monitoring.Servers (idempotent)
---   2. Clear all existing rows and insert a single fresh central row:
---        ServerName        = MachineName[\InstanceName]  via SERVERPROPERTY (dynamic, current server)
---        CentralServerName = N'DBMGMT\SQL01,10010'           (hardcoded central endpoint)
---   3. Set flags: Central=1, Target=0 for the central row
---
--- NOTE: Column references to Central/Target are wrapped in sp_executesql to
---       avoid Msg 207 batch-compile error (SQL Server resolves names before
---       ALTER TABLE executes within the same batch).
+--   Recreate Monitoring.Servers with the correct column order on CENTRAL.
+--   Inserts a single central row:
+--     ServerName        = MachineName[\InstanceName]  (SERVERPROPERTY, dynamic)
+--     CentralServerName = N'DBMGMT\SQL01,10010'       (hardcoded)
+--     Central=1, Target=0
 
 USE DBA_DB;
 GO
 SET NOCOUNT ON;
 GO
 
--- Guard: table must exist
-IF OBJECT_ID(N'Monitoring.Servers', N'U') IS NULL
-BEGIN
-    RAISERROR(N'Monitoring.Servers does not exist. Run central setup steps first.', 16, 1);
-    RETURN;
-END
+-- Ensure schema exists
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'Monitoring')
+    EXEC sp_executesql N'CREATE SCHEMA Monitoring';
 GO
 
--- 1. Add Central column (idempotent)
-IF COL_LENGTH(N'Monitoring.Servers', N'Central') IS NULL
-BEGIN
-    ALTER TABLE Monitoring.Servers ADD Central BIT NULL;
-    PRINT 'Column Central added.';
-END
-ELSE
-    PRINT 'Column Central already exists, skipping.';
+-- Drop and recreate Monitoring.Servers with correct column order
+IF OBJECT_ID(N'Monitoring.Servers', N'U') IS NOT NULL
+    DROP TABLE Monitoring.Servers;
+
+CREATE TABLE Monitoring.Servers (
+    ServerName        NVARCHAR(256) NOT NULL PRIMARY KEY,
+    CentralServerName NVARCHAR(256) NOT NULL,
+    IsActive          BIT           NOT NULL CONSTRAINT DF_Servers_IsActive DEFAULT (1),
+    Central           BIT           NULL,
+    Target            BIT           NULL,
+    CreatedAt         DATETIME2     NOT NULL DEFAULT GETDATE(),
+    ModifiedAt        DATETIME2     NOT NULL DEFAULT GETDATE()
+);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Servers_CentralServerName')
+    CREATE INDEX IX_Servers_CentralServerName ON Monitoring.Servers(CentralServerName);
+
+PRINT 'Monitoring.Servers recreated.';
 GO
 
--- 2. Add Target column (idempotent)
-IF COL_LENGTH(N'Monitoring.Servers', N'Target') IS NULL
-BEGIN
-    ALTER TABLE Monitoring.Servers ADD Target BIT NULL;
-    PRINT 'Column Target added.';
-END
-ELSE
-    PRINT 'Column Target already exists, skipping.';
-GO
-
--- 3. Detect instance name and set hardcoded central endpoint
-DECLARE @InstanceName     NVARCHAR(256) =
+-- Insert central row (separate batch: columns resolved fresh after CREATE TABLE)
+DECLARE @InstanceName    NVARCHAR(256) =
     CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
     ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'');
-DECLARE @CentralEndpoint  NVARCHAR(256) = N'DBMGMT\SQL01,10010';
+DECLARE @CentralEndpoint NVARCHAR(256) = N'DBMGMT\SQL01,10010';
 
--- 4. Clear all existing rows and insert fresh central row
-TRUNCATE TABLE Monitoring.Servers;
-PRINT 'Monitoring.Servers truncated.';
+INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive, Central, Target)
+VALUES (@InstanceName, @CentralEndpoint, 1, 1, 0);
 
-INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive)
-VALUES (@InstanceName, @CentralEndpoint, 1);
-PRINT 'Central row inserted: ServerName=' + @InstanceName + ', CentralServerName=' + @CentralEndpoint;
+PRINT 'Central row inserted: ' + @InstanceName;
 GO
 
--- 5. Set Central/Target flags on the central row
---    Wrapped in sp_executesql to avoid Msg 207 if columns were just added above
-EXEC sp_executesql N'
-UPDATE Monitoring.Servers
-SET Central    = CAST(1 AS BIT),
-    Target     = CAST(0 AS BIT),
-    ModifiedAt = GETDATE();
-PRINT ''Central/Target flags set.'';
-';
-GO
-
--- 6. Final verification (sp_executesql so new columns are resolved at runtime)
-EXEC sp_executesql N'
-SELECT ServerName, CentralServerName, IsActive, Central, Target, ModifiedAt
-FROM Monitoring.Servers
-ORDER BY Central DESC, ServerName;
-';
+SELECT * FROM DBA_DB.Monitoring.Servers;
 GO

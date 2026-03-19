@@ -1,110 +1,87 @@
 -- Utility Script - Step 91 (run on TARGET)
 -- Purpose:
--- 1) Ensure TARGET local Monitoring.Servers rows are up to date
---    (one row for CENTRAL and one row for TARGET).
--- 2) Send TARGET server name registration to CENTRAL (DBMGMT\SQL01,10010)
---    through xp_cmdshell + sqlcmd.
--- 3) Verify central row through sqlcmd (no linked servers).
+-- 1) Recreate Monitoring.Servers with correct schema on TARGET.
+-- 2) Insert CENTRAL marker row (Central=1, Target=0) and TARGET row (Central=0, Target=1).
+-- 3) Show SELECT * FROM DBA_DB.Monitoring.Servers.
+-- 4) Push TARGET registration to CENTRAL (DBMGMT\SQL01,10010) via sqlcmd / xp_cmdshell.
 
 SET NOCOUNT ON;
 
-DECLARE @CentralEndpoint NVARCHAR(256) = N'DBMGMT\SQL01,10010';
+DECLARE @CentralEndpoint    NVARCHAR(256) = N'DBMGMT\SQL01,10010';
 DECLARE @TargetInstanceName NVARCHAR(256) =
     CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
     ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'');
 
 USE DBA_DB;
 
-IF OBJECT_ID(N'Monitoring.Servers', N'U') IS NULL
-BEGIN
-    RAISERROR(N'Monitoring.Servers table is missing on TARGET. Run target setup step 02 first.', 16, 1);
-    RETURN;
-END;
+-- Ensure schema exists
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'Monitoring')
+    EXEC sp_executesql N'CREATE SCHEMA Monitoring';
 
--- Add Central/Target columns idempotently (may be absent on older installs).
-IF COL_LENGTH(N'Monitoring.Servers', N'Central') IS NULL
-    ALTER TABLE Monitoring.Servers ADD Central BIT NULL;
+-- Drop and recreate Monitoring.Servers with correct column order
+IF OBJECT_ID(N'Monitoring.Servers', N'U') IS NOT NULL
+    DROP TABLE Monitoring.Servers;
 
-IF COL_LENGTH(N'Monitoring.Servers', N'Target') IS NULL
-    ALTER TABLE Monitoring.Servers ADD Target BIT NULL;
+CREATE TABLE Monitoring.Servers (
+    ServerName        NVARCHAR(256) NOT NULL PRIMARY KEY,
+    CentralServerName NVARCHAR(256) NOT NULL,
+    IsActive          BIT           NOT NULL CONSTRAINT DF_Servers_IsActive DEFAULT (1),
+    Central           BIT           NULL,
+    Target            BIT           NULL,
+    CreatedAt         DATETIME2     NOT NULL DEFAULT GETDATE(),
+    ModifiedAt        DATETIME2     NOT NULL DEFAULT GETDATE()
+);
 
--- Upsert TARGET row (Central=0, Target=1) and CENTRAL marker row (Central=1, Target=0).
--- Wrapped in sp_executesql to avoid Msg 207 if columns were just added above.
-EXEC sp_executesql N'
-MERGE Monitoring.Servers AS dst
-USING (SELECT @TargetInstanceName AS ServerName, @CentralEndpoint AS CentralServerName,
-              CAST(0 AS BIT) AS Central, CAST(1 AS BIT) AS Target, CAST(1 AS BIT) AS IsActive) AS src
-ON dst.ServerName = src.ServerName
-WHEN MATCHED THEN UPDATE SET
-    dst.CentralServerName = src.CentralServerName,
-    dst.Central    = src.Central,
-    dst.Target     = src.Target,
-    dst.IsActive   = src.IsActive,
-    dst.ModifiedAt = GETDATE()
-WHEN NOT MATCHED THEN INSERT (ServerName, CentralServerName, Central, Target, IsActive)
-    VALUES (src.ServerName, src.CentralServerName, src.Central, src.Target, src.IsActive);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Servers_CentralServerName')
+    CREATE INDEX IX_Servers_CentralServerName ON Monitoring.Servers(CentralServerName);
 
-MERGE Monitoring.Servers AS dst
-USING (SELECT @CentralEndpoint AS ServerName, @CentralEndpoint AS CentralServerName,
-              CAST(1 AS BIT) AS Central, CAST(0 AS BIT) AS Target, CAST(1 AS BIT) AS IsActive) AS src
-ON dst.ServerName = src.ServerName
-WHEN MATCHED THEN UPDATE SET
-    dst.CentralServerName = src.CentralServerName,
-    dst.Central    = src.Central,
-    dst.Target     = src.Target,
-    dst.IsActive   = src.IsActive,
-    dst.ModifiedAt = GETDATE()
-WHEN NOT MATCHED THEN INSERT (ServerName, CentralServerName, Central, Target, IsActive)
-    VALUES (src.ServerName, src.CentralServerName, src.Central, src.Target, src.IsActive);
-',
-N'@TargetInstanceName NVARCHAR(256), @CentralEndpoint NVARCHAR(256)',
-@TargetInstanceName = @TargetInstanceName,
-@CentralEndpoint    = @CentralEndpoint;
+PRINT 'Monitoring.Servers recreated.';
+GO
 
--- Show stored rows with persisted Central/Target flags.
-EXEC sp_executesql N'
-SELECT
-    N''Local Monitoring.Servers'' AS Info,
-    s.ServerName,
-    s.CentralServerName,
-    s.IsActive,
-    s.Central,
-    s.Target,
-    s.ModifiedAt
-FROM Monitoring.Servers s
-WHERE s.ServerName IN (@CentralEndpoint, @TargetInstanceName)
-ORDER BY s.ServerName;
-',
-N'@TargetInstanceName NVARCHAR(256), @CentralEndpoint NVARCHAR(256)',
-@TargetInstanceName = @TargetInstanceName,
-@CentralEndpoint    = @CentralEndpoint;
+-- Part 1: insert rows and show local state
+-- (separate batch so columns are resolved fresh after CREATE TABLE)
+DECLARE @CentralEndpoint    NVARCHAR(256) = N'DBMGMT\SQL01,10010';
+DECLARE @TargetInstanceName NVARCHAR(256) =
+    CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
+    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'');
 
--- Build CENTRAL merge command to run from TARGET via sqlcmd.
--- This sends the TARGET server name to central Monitoring.Servers.
+INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive, Central, Target)
+VALUES (@CentralEndpoint, @CentralEndpoint, 1, 1, 0);
+
+INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive, Central, Target)
+VALUES (@TargetInstanceName, @CentralEndpoint, 1, 0, 1);
+
+PRINT 'Rows inserted: ' + @CentralEndpoint + ' (Central), ' + @TargetInstanceName + ' (Target)';
+GO
+
+SELECT * FROM DBA_DB.Monitoring.Servers;
+GO
+
+-- Part 2: push TARGET registration to CENTRAL
+DECLARE @CentralEndpoint    NVARCHAR(256) = N'DBMGMT\SQL01,10010';
+DECLARE @TargetInstanceName NVARCHAR(256) =
+    CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
+    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'');
+
 DECLARE @CentralMergeQuery NVARCHAR(MAX) =
     N'SET NOCOUNT ON; '
   + N'MERGE Monitoring.Servers AS dst '
-    + N'USING (SELECT CAST(N''' + REPLACE(@TargetInstanceName, N'''', N'''''') + N''' AS NVARCHAR(256)) AS ServerName, '
+  + N'USING (SELECT CAST(N''' + REPLACE(@TargetInstanceName, N'''', N'''''') + N''' AS NVARCHAR(256)) AS ServerName, '
   + N'CAST(N''' + REPLACE(@CentralEndpoint, N'''', N'''''') + N''' AS NVARCHAR(256)) AS CentralServerName, '
   + N'CAST(0 AS BIT) AS Central, CAST(1 AS BIT) AS Target, CAST(1 AS BIT) AS IsActive) AS src '
   + N'ON dst.ServerName = src.ServerName '
   + N'WHEN MATCHED THEN UPDATE SET dst.CentralServerName = src.CentralServerName, dst.Central = src.Central, dst.Target = src.Target, dst.IsActive = src.IsActive, dst.ModifiedAt = GETDATE() '
-  + N'WHEN NOT MATCHED THEN INSERT (ServerName, CentralServerName, Central, Target, IsActive) VALUES (src.ServerName, src.CentralServerName, src.Central, src.Target, src.IsActive); '
-    + N'SELECT N''Central Monitoring.Servers'' AS Info, ServerName, CentralServerName, '
-    + N'IsActive, Central, Target, '
-    + N'ModifiedAt '
-    + N'FROM Monitoring.Servers WHERE ServerName = N''' + REPLACE(@TargetInstanceName, N'''', N'''''') + N''';';
+  + N'WHEN NOT MATCHED THEN INSERT (ServerName, CentralServerName, IsActive, Central, Target) VALUES (src.ServerName, src.CentralServerName, src.IsActive, src.Central, src.Target); '
+  + N'SELECT * FROM Monitoring.Servers WHERE ServerName = N''' + REPLACE(@TargetInstanceName, N'''', N'''''') + N''';';
 
 DECLARE @RunOnTargetCommand NVARCHAR(MAX) =
     N'sqlcmd -S ' + @CentralEndpoint
   + N' -d DBA_DB -E -N -C -b -Q "' + REPLACE(@CentralMergeQuery, N'"', N'\"') + N'"';
 
--- Print a ready command for manual run on TARGET.
 SELECT
     N'Run on TARGET' AS Info,
     @RunOnTargetCommand AS TargetCommand;
 
--- Execute immediately on TARGET via xp_cmdshell if available.
 DECLARE @xpCmdShellEnabled BIT = 0;
 SELECT @xpCmdShellEnabled = CAST(value_in_use AS BIT)
 FROM sys.configurations
@@ -119,3 +96,4 @@ ELSE
 BEGIN
     PRINT N'xp_cmdshell is disabled. Run the command from result set manually on TARGET.';
 END;
+GO
