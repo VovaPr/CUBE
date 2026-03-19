@@ -1,7 +1,7 @@
 -- Central Server Setup - Step 4
 -- Create Agent Jobs on DBMGMT.cubecloud.local\SQL01,10010
--- Job 1: DBA - Collect Job Status       -> runs at :01 every hour
--- Job 2: DBA - Common Monitoring Alerts -> runs at :05 every hour
+-- Job 1: DBA - Central Monitoring Jobs -> runs at :01 every hour
+-- Job 2: DBA - Target Monitoring Jobs  -> runs at :05 every hour
 --
 -- Separation ensures data is collected (4 min window) before alerts fire.
 
@@ -42,28 +42,49 @@ BEGIN
 END
 GO
 
--- ============================================================
--- JOB 1: DBA - Collect Job Status  (runs at :01 every hour)
--- ============================================================
+-- Remove previous central job names (legacy)
 IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Collect Job Status')
     EXEC sp_delete_job @job_name = 'DBA - Collect Job Status', @delete_unused_schedule = 1;
 GO
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Common Monitoring Alerts')
+    EXEC sp_delete_job @job_name = 'DBA - Common Monitoring Alerts', @delete_unused_schedule = 1;
+GO
+
+-- ============================================================
+-- JOB 1: DBA - Central Monitoring Jobs  (runs at :01 every hour)
+-- ============================================================
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Central Monitoring Jobs')
+    EXEC sp_delete_job @job_name = 'DBA - Central Monitoring Jobs', @delete_unused_schedule = 1;
+GO
 
 EXEC sp_add_job
-    @job_name = 'DBA - Collect Job Status',
+    @job_name = 'DBA - Central Monitoring Jobs',
     @enabled = 1,
-    @description = 'Collects local job statuses into Monitoring.Jobs and updates FailedJobsAlerts. Runs at :01 every hour.',
+    @description = 'Central local monitoring: collects current job statuses and refreshes local FailedJobsAlerts.',
     @owner_login_name = 'sa',
     @notify_level_email = 2,
     @notify_email_operator_name = N'Monitoring';
 GO
 
 EXEC sp_add_jobstep
-    @job_name = 'DBA - Collect Job Status',
-    @step_name = 'Collect Job Status and Check Alerts',
+    @job_name = 'DBA - Central Monitoring Jobs',
+    @step_name = 'Collect Current Jobs',
     @step_id = 1,
     @subsystem = 'TSQL',
-    @command = 'EXEC dba_db.Monitoring.SP_MonitoringJobs',
+    @command = 'EXEC dba_db.Monitoring.SP_CollectJobs',
+    @database_name = 'dba_db',
+    @retry_attempts = 3,
+    @retry_interval = 1,
+    @on_success_action = 3,
+    @on_fail_action = 2;
+GO
+
+EXEC sp_add_jobstep
+    @job_name = 'DBA - Central Monitoring Jobs',
+    @step_name = 'Refresh Failed Alerts',
+    @step_id = 2,
+    @subsystem = 'TSQL',
+    @command = 'EXEC dba_db.Monitoring.SP_RefreshFailedJobsAlerts',
     @database_name = 'dba_db',
     @retry_attempts = 3,
     @retry_interval = 1,
@@ -75,8 +96,12 @@ IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Collect Job S
     EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Collect Job Status - Hourly at :01';
 GO
 
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Central Monitoring Jobs - Hourly at :01')
+    EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Central Monitoring Jobs - Hourly at :01';
+GO
+
 EXEC sp_add_schedule
-    @schedule_name = 'DBA - Collect Job Status - Hourly at :01',
+    @schedule_name = 'DBA - Central Monitoring Jobs - Hourly at :01',
     @freq_type = 4,
     @freq_interval = 1,
     @freq_subday_type = 8,       -- every N hours
@@ -86,35 +111,74 @@ EXEC sp_add_schedule
 GO
 
 EXEC sp_attach_schedule
-    @job_name = 'DBA - Collect Job Status',
-    @schedule_name = 'DBA - Collect Job Status - Hourly at :01';
+    @job_name = 'DBA - Central Monitoring Jobs',
+    @schedule_name = 'DBA - Central Monitoring Jobs - Hourly at :01';
 GO
 
 EXEC sp_add_jobserver
-    @job_name = 'DBA - Collect Job Status',
+    @job_name = 'DBA - Central Monitoring Jobs',
     @server_name = N'(local)';
 GO
 
 -- ============================================================
--- JOB 2: DBA - Common Monitoring Alerts  (runs at :05 every hour)
+-- JOB 2: DBA - Target Monitoring Jobs  (runs at :05 every hour)
 -- ============================================================
-IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Common Monitoring Alerts')
-    EXEC sp_delete_job @job_name = 'DBA - Common Monitoring Alerts', @delete_unused_schedule = 1;
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Target Monitoring Jobs')
+    EXEC sp_delete_job @job_name = 'DBA - Target Monitoring Jobs', @delete_unused_schedule = 1;
 GO
 
 EXEC sp_add_job
-    @job_name = 'DBA - Common Monitoring Alerts',
+    @job_name = 'DBA - Target Monitoring Jobs',
     @enabled = 1,
-    @description = 'Sends email notifications for unresolved alerts already pushed into central tables. Runs at :05 every hour.',
+    @description = 'Central target monitoring orchestration: local collect, local failed-alert refresh, target pull via sqlcmd, then email notifications.',
     @owner_login_name = 'sa',
     @notify_level_email = 2,
     @notify_email_operator_name = N'Monitoring';
 GO
 
 EXEC sp_add_jobstep
-    @job_name = 'DBA - Common Monitoring Alerts',
-    @step_name = 'Send Email Alerts',
+    @job_name = 'DBA - Target Monitoring Jobs',
+    @step_name = 'Collect Current Jobs',
     @step_id = 1,
+    @subsystem = 'TSQL',
+    @command = 'EXEC dba_db.Monitoring.SP_CollectJobs',
+    @database_name = 'dba_db',
+    @retry_attempts = 3,
+    @retry_interval = 1,
+    @on_success_action = 3,
+    @on_fail_action = 2;
+GO
+
+EXEC sp_add_jobstep
+    @job_name = 'DBA - Target Monitoring Jobs',
+    @step_name = 'Refresh Failed Alerts',
+    @step_id = 2,
+    @subsystem = 'TSQL',
+    @command = 'EXEC dba_db.Monitoring.SP_RefreshFailedJobsAlerts',
+    @database_name = 'dba_db',
+    @retry_attempts = 3,
+    @retry_interval = 1,
+    @on_success_action = 3,
+    @on_fail_action = 2;
+GO
+
+EXEC sp_add_jobstep
+    @job_name = 'DBA - Target Monitoring Jobs',
+    @step_name = 'Pull Target Failed Alerts',
+    @step_id = 3,
+    @subsystem = 'TSQL',
+    @command = 'EXEC dba_db.Monitoring.SP_PullTargetFailedJobsAlerts',
+    @database_name = 'dba_db',
+    @retry_attempts = 3,
+    @retry_interval = 1,
+    @on_success_action = 3,
+    @on_fail_action = 2;
+GO
+
+EXEC sp_add_jobstep
+    @job_name = 'DBA - Target Monitoring Jobs',
+    @step_name = 'Send Email Alerts',
+    @step_id = 4,
     @subsystem = 'TSQL',
     @command = 'EXEC dba_db.Monitoring.SP_SendAlerts @OperatorName = ''Monitoring'', @MailProfile = ''SQLAlerts''',
     @database_name = 'dba_db',
@@ -128,8 +192,12 @@ IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Common Monito
     EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Common Monitoring Alerts - Hourly at :05';
 GO
 
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Target Monitoring Jobs - Hourly at :05')
+    EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Target Monitoring Jobs - Hourly at :05';
+GO
+
 EXEC sp_add_schedule
-    @schedule_name = 'DBA - Common Monitoring Alerts - Hourly at :05',
+    @schedule_name = 'DBA - Target Monitoring Jobs - Hourly at :05',
     @freq_type = 4,
     @freq_interval = 1,
     @freq_subday_type = 8,       -- every N hours
@@ -139,15 +207,15 @@ EXEC sp_add_schedule
 GO
 
 EXEC sp_attach_schedule
-    @job_name = 'DBA - Common Monitoring Alerts',
-    @schedule_name = 'DBA - Common Monitoring Alerts - Hourly at :05';
+    @job_name = 'DBA - Target Monitoring Jobs',
+    @schedule_name = 'DBA - Target Monitoring Jobs - Hourly at :05';
 GO
 
 EXEC sp_add_jobserver
-    @job_name = 'DBA - Common Monitoring Alerts',
+    @job_name = 'DBA - Target Monitoring Jobs',
     @server_name = N'(local)';
 GO
 
 PRINT 'Central Agent Jobs created successfully:';
-PRINT '  DBA - Collect Job Status       → every hour at :01';
-PRINT '  DBA - Common Monitoring Alerts → every hour at :05';
+PRINT '  DBA - Central Monitoring Jobs → every hour at :01';
+PRINT '  DBA - Target Monitoring Jobs  → every hour at :05';

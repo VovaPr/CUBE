@@ -3,58 +3,98 @@
 -- from DBMGMT.cubecloud.local\SQL01,10010.
 --
 -- Reverses: 04_create_agent_job.sql
---   Job 1: DBA - Collect Job Status         (schedule: DBA - Collect Job Status - Hourly at :01)
---   Job 2: DBA - Common Monitoring Alerts   (schedule: DBA - Common Monitoring Alerts - Hourly at :05)
+--   Job 1: DBA - Central Monitoring Jobs     (schedule: DBA - Central Monitoring Jobs - Hourly at :01)
+--   Job 2: DBA - Target Monitoring Jobs      (schedule: DBA - Target Monitoring Jobs - Hourly at :05)
+-- Also removes previous job versions:
+--   DBA - Collect Job Status
+--   DBA - Common Monitoring Alerts
 --   Operator: Monitoring
 
 USE msdb;
 GO
 
 -- ============================================================
--- Remove Job 1: DBA - Collect Job Status
+-- Remove Job 1: DBA - Central Monitoring Jobs
 -- ============================================================
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Central Monitoring Jobs')
+BEGIN
+    EXEC sp_delete_job
+        @job_name = 'DBA - Central Monitoring Jobs',
+        @delete_unused_schedule = 1;
+    PRINT 'Job "DBA - Central Monitoring Jobs" deleted.';
+END
+ELSE
+    PRINT 'Job "DBA - Central Monitoring Jobs" does not exist, nothing to delete.';
+GO
+
+-- Safety: drop orphaned schedule if still present
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Central Monitoring Jobs - Hourly at :01')
+BEGIN
+    EXEC msdb.dbo.sp_delete_schedule
+        @schedule_name = 'DBA - Central Monitoring Jobs - Hourly at :01',
+        @force_delete = 1;
+    PRINT 'Schedule "DBA - Central Monitoring Jobs - Hourly at :01" deleted.';
+END
+GO
+
+-- ============================================================
+-- Remove Job 2: DBA - Target Monitoring Jobs
+-- ============================================================
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Target Monitoring Jobs')
+BEGIN
+    EXEC sp_delete_job
+        @job_name = 'DBA - Target Monitoring Jobs',
+        @delete_unused_schedule = 1;
+    PRINT 'Job "DBA - Target Monitoring Jobs" deleted.';
+END
+ELSE
+    PRINT 'Job "DBA - Target Monitoring Jobs" does not exist, nothing to delete.';
+GO
+
+-- Safety: drop orphaned schedule if still present
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Target Monitoring Jobs - Hourly at :05')
+BEGIN
+    EXEC msdb.dbo.sp_delete_schedule
+        @schedule_name = 'DBA - Target Monitoring Jobs - Hourly at :05',
+        @force_delete = 1;
+    PRINT 'Schedule "DBA - Target Monitoring Jobs - Hourly at :05" deleted.';
+END
+GO
+
+-- Remove previous job versions and schedules
 IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Collect Job Status')
 BEGIN
     EXEC sp_delete_job
         @job_name = 'DBA - Collect Job Status',
         @delete_unused_schedule = 1;
-    PRINT 'Job "DBA - Collect Job Status" deleted.';
-END
-ELSE
-    PRINT 'Job "DBA - Collect Job Status" does not exist, nothing to delete.';
-GO
-
--- Safety: drop orphaned schedule if still present
-IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Collect Job Status - Hourly at :01')
-BEGIN
-    EXEC msdb.dbo.sp_delete_schedule
-        @schedule_name = 'DBA - Collect Job Status - Hourly at :01',
-        @force_delete = 1;
-    PRINT 'Schedule "DBA - Collect Job Status - Hourly at :01" deleted.';
+    PRINT 'Legacy job "DBA - Collect Job Status" deleted.';
 END
 GO
 
--- ============================================================
--- Remove Job 2: DBA - Common Monitoring Alerts
--- ============================================================
 IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Common Monitoring Alerts')
 BEGIN
     EXEC sp_delete_job
         @job_name = 'DBA - Common Monitoring Alerts',
         @delete_unused_schedule = 1;
-    PRINT 'Job "DBA - Common Monitoring Alerts" deleted.';
+    PRINT 'Legacy job "DBA - Common Monitoring Alerts" deleted.';
 END
-ELSE
-    PRINT 'Job "DBA - Common Monitoring Alerts" does not exist, nothing to delete.';
 GO
 
--- Safety: drop orphaned schedule if still present
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Collect Job Status - Hourly at :01')
+BEGIN
+    EXEC msdb.dbo.sp_delete_schedule
+        @schedule_name = 'DBA - Collect Job Status - Hourly at :01',
+        @force_delete = 1;
+    PRINT 'Legacy schedule "DBA - Collect Job Status - Hourly at :01" deleted.';
+END
+GO
+
 IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Common Monitoring Alerts - Hourly at :05')
 BEGIN
     EXEC msdb.dbo.sp_delete_schedule
         @schedule_name = 'DBA - Common Monitoring Alerts - Hourly at :05',
         @force_delete = 1;
-    PRINT 'Schedule "DBA - Common Monitoring Alerts - Hourly at :05" deleted.';
+    PRINT 'Legacy schedule "DBA - Common Monitoring Alerts - Hourly at :05" deleted.';
 END
 GO
 

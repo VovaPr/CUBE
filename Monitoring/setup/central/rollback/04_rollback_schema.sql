@@ -9,6 +9,9 @@ GO
 IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_FailedJobsAlerts_AlertSentTime')
     DROP INDEX IX_FailedJobsAlerts_AlertSentTime ON Monitoring.FailedJobsAlerts;
 
+IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_TargetPullLog_LoggedAt')
+    DROP INDEX IX_TargetPullLog_LoggedAt ON Monitoring.TargetPullLog;
+
 IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Servers_CentralServerName')
     DROP INDEX IX_Servers_CentralServerName ON Monitoring.Servers;
 
@@ -24,6 +27,12 @@ IF OBJECT_ID('Monitoring.FailedJobsAlerts', 'U') IS NOT NULL
 BEGIN
     DROP TABLE Monitoring.FailedJobsAlerts;
     PRINT 'Table Monitoring.FailedJobsAlerts dropped.';
+END
+
+IF OBJECT_ID('Monitoring.TargetPullLog', 'U') IS NOT NULL
+BEGIN
+    DROP TABLE Monitoring.TargetPullLog;
+    PRINT 'Table Monitoring.TargetPullLog dropped.';
 END
 
 IF OBJECT_ID('Monitoring.Jobs', 'U') IS NOT NULL

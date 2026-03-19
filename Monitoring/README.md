@@ -11,9 +11,9 @@ A comprehensive T-SQL solution to monitor SQL Server Agent jobs from a central s
 ## Architecture
 
 **Central Monitoring Server - `DBMGMT.cubecloud.local\SQL01,10010` (origin\Master)**
-- runs the SQL Agent job **DBA - Common Monitoring Alerts** every 5 minutes
-- receives alert data pushed from target servers into central `dba_db`
-- executes `Monitoring.SP_SendAlerts` on central data and sends emails
+- runs the SQL Agent jobs **DBA - Central Monitoring Jobs** (:01 hourly) and **DBA - Target Monitoring Jobs** (:05 hourly)
+- orchestrates target collection via `sqlcmd` only (no linked servers)
+- executes `Monitoring.SP_SendAlerts` on central aggregated data and sends emails
 
 On each **Target Server**:
 - `Monitoring.Jobs` table stores the latest job status for that server
@@ -23,37 +23,40 @@ On each **Target Server**:
   on the target schedule (hourly by default)
 
 The **Central Server** also has all of the above objects; in addition it runs a
-special job (`DBA - Common Monitoring Alerts`) every five minutes that reads
-already-centralized alerts and dispatches emails.
+special job (`DBA - Target Monitoring Jobs`) every hour at :05 with 4 steps:
+1) collect current central jobs into `Monitoring.Jobs`
+2) refresh central `Monitoring.FailedJobsAlerts`
+3) loop all active targets and pull/persist target alerts into central table
+4) send operator notification email
 
 ## Project Structure
 
 - **setup/central/** - Central server setup (DBMGMT.cubecloud.local\SQL01,10010):
-  - `01_create_schema.sql` – creates `Monitoring` schema and tables, including the final `Monitoring.Servers` layout and central row
-  - `02_create_stored_procedure.sql` – defines `Monitoring.SP_MonitoringJobs`
+  - `01_create_schema.sql` – creates `Monitoring` schema/tables including `Monitoring.TargetPullLog`, final `Monitoring.Servers` layout, and central row
+  - `02_create_stored_procedure.sql` – defines `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts`, `Monitoring.SP_MonitoringJobs`, `Monitoring.SP_PullTargetFailedJobsAlerts`
   - `03_create_send_alerts_procedure.sql` – defines `Monitoring.SP_SendAlerts`
   - `04_create_agent_job.sql` – creates two jobs:
-    - **DBA - Collect Job Status** — runs at **:01** every hour
-    - **DBA - Common Monitoring Alerts** — runs at **:05** every hour and sends email from central table
+    - **DBA - Central Monitoring Jobs** — runs at **:01** every hour; collects jobs and refreshes failed-alert table
+    - **DBA - Target Monitoring Jobs** — runs at **:05** every hour; collect, refresh, target pull, then send email
   - `05_prepare_target_grants.sql` – grants required access and prints target-side utility SQL
 
 - **setup/central/rollback/** – Central rollback scripts:
   - `01_rollback_agent_job.sql` – removes central jobs and operator
   - `02_rollback_send_alerts_procedure.sql` – drops `Monitoring.SP_SendAlerts`
-  - `03_rollback_stored_procedure.sql` – drops `Monitoring.SP_MonitoringJobs`
+  - `03_rollback_stored_procedure.sql` – drops `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts`, `Monitoring.SP_MonitoringJobs`, `Monitoring.SP_PullTargetFailedJobsAlerts`
   - `04_rollback_schema.sql` – drops monitoring tables and schema
 
 - **setup/target/** – Target server setup (all monitored servers):
   - `01_create_schema.sql` – creates `Monitoring` schema and tables, including the final `Monitoring.Servers` layout and initial central/target rows
   - `02_create_servers_table.sql` – recreates `Monitoring.Servers` with the final layout and re-seeds central/target rows
-  - `03_create_stored_procedure.sql` – defines `Monitoring.SP_MonitoringJobs` (collect + fill alerts + auto-resolve)
+  - `03_create_stored_procedure.sql` – defines `Monitoring.SP_MonitoringJobs` and `Monitoring.SP_PushFailedJobsAlertsToCentral` (sqlcmd push to central)
   - `04_create_agent_job.sql` – creates **DBA - Monitoring Alerts** job (every hour at **:01**)
   - `05_link_central_and_target.sql` – utility script that rebuilds local `Monitoring.Servers` rows and can execute target-to-central registration immediately
   - target setup uses `DBMGMT\SQL01,10010` as `CentralServerName`
 
 - **setup/target/rollback/** – Target rollback scripts:
   - `01_rollback_agent_job.sql` – removes target job and operator
-  - `02_rollback_stored_procedure.sql` – drops `Monitoring.SP_MonitoringJobs`
+  - `02_rollback_stored_procedure.sql` – drops `Monitoring.SP_MonitoringJobs` and `Monitoring.SP_PushFailedJobsAlertsToCentral`
   - `03_rollback_servers_table.sql` – drops `Monitoring.Servers` only (use for partial rollback)
   - `04_rollback_schema.sql` – drops monitoring tables and schema
 
@@ -78,7 +81,7 @@ USE master; GO
 USE master; GO
 :r "setup\central\03_create_send_alerts_procedure.sql"
 
--- 4. Create Agent job (runs every 5 minutes)
+-- 4. Create Agent jobs (hourly schedules: :01 and :05)
 USE master; GO
 :r "setup\central\04_create_agent_job.sql"
 
@@ -131,7 +134,7 @@ USE master; GO
 :r "setup\target\04_create_agent_job.sql"
 ```
 
-### Target Push Prerequisite: One Aggregated Server Table
+### Central Pull Prerequisite: One Aggregated Server Table
 
 Each target server stores its own registration/heartbeat row in
 `dba_db.Monitoring.Servers` (created by `setup/target/01_create_schema.sql` and refreshable via `setup/target/02_create_servers_table.sql`).
@@ -235,7 +238,7 @@ SELECT TOP 10 sj.name,
 FROM msdb.dbo.sysjobhistory sjh
 JOIN msdb.dbo.sysjobs sj
   ON sjh.job_id = sj.job_id
-WHERE sj.name = 'DBA - Collect Job Status'
+WHERE sj.name = 'DBA - Central Monitoring Jobs'
 ORDER BY sjh.run_date DESC;
 ```
 
@@ -248,17 +251,17 @@ SELECT TOP 10 sj.name,
 FROM msdb.dbo.sysjobhistory sjh
 JOIN msdb.dbo.sysjobs sj
   ON sjh.job_id = sj.job_id
-WHERE sj.name = 'DBA - Common Monitoring Alerts'
+WHERE sj.name = 'DBA - Target Monitoring Jobs'
 ORDER BY sjh.run_date DESC;
 ```
 
-**Check central alert job steps (must be 1 step):**
+**Check central target-monitoring job steps (must be 4 steps):**
 ```sql
 SELECT s.step_id, s.step_name, s.on_success_action, s.on_success_step_id
 FROM msdb.dbo.sysjobsteps s
 JOIN msdb.dbo.sysjobs j
   ON j.job_id = s.job_id
-WHERE j.name = 'DBA - Common Monitoring Alerts'
+WHERE j.name = 'DBA - Target Monitoring Jobs'
 ORDER BY s.step_id;
 ```
 
@@ -285,7 +288,7 @@ ORDER BY LastFailureTime DESC;
   - ensure `Database Mail XPs` is enabled
 
 - **Statuses not updating:**
-  - confirm the Agent jobs **DBA - Monitoring Alerts** (targets, at :01) and **DBA - Collect Job Status** / **DBA - Common Monitoring Alerts** (central, at :01/:05) are scheduled and running
+  - confirm the Agent jobs **DBA - Monitoring Alerts** (targets, at :01) and **DBA - Central Monitoring Jobs** / **DBA - Target Monitoring Jobs** (central, at :01/:05) are scheduled and running
   - check security/access to target servers
   - examine job history for errors
 

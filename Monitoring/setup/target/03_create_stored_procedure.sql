@@ -172,3 +172,109 @@ END
 GO
 
 PRINT 'Stored procedure Monitoring.SP_MonitoringJobs created on target server.';
+
+IF OBJECT_ID('Monitoring.SP_PushFailedJobsAlertsToCentral', 'P') IS NOT NULL
+    DROP PROCEDURE Monitoring.SP_PushFailedJobsAlertsToCentral;
+GO
+
+CREATE PROCEDURE Monitoring.SP_PushFailedJobsAlertsToCentral
+    @CentralEndpoint NVARCHAR(256) = N'DBMGMT\SQL01,10010'
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ServerName NVARCHAR(256);
+    DECLARE @JobName NVARCHAR(256);
+    DECLARE @FailureCount INT;
+    DECLARE @FirstFailureTime DATETIME2;
+    DECLARE @LastFailureTime DATETIME2;
+    DECLARE @AlertSentTime DATETIME2;
+    DECLARE @IsResolved BIT;
+    DECLARE @ResolutionTime DATETIME2;
+
+    DECLARE @MergeSql NVARCHAR(MAX);
+    DECLARE @RunOnCentralCommand NVARCHAR(MAX);
+    DECLARE @xpCmd VARCHAR(8000);
+    DECLARE @xpWasEnabled BIT = 0;
+
+    SELECT @xpWasEnabled = CAST(value_in_use AS BIT)
+    FROM sys.configurations
+    WHERE name = N'xp_cmdshell';
+
+    IF @xpWasEnabled = 0
+    BEGIN
+        EXEC sp_configure 'show advanced options', 1; RECONFIGURE;
+        EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;
+    END;
+
+    DECLARE c CURSOR LOCAL FAST_FORWARD FOR
+        SELECT
+            ServerName,
+            JobName,
+            FailureCount,
+            FirstFailureTime,
+            LastFailureTime,
+            AlertSentTime,
+            IsResolved,
+            ResolutionTime
+        FROM Monitoring.FailedJobsAlerts;
+
+    OPEN c;
+    FETCH NEXT FROM c INTO @ServerName, @JobName, @FailureCount, @FirstFailureTime, @LastFailureTime, @AlertSentTime, @IsResolved, @ResolutionTime;
+
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        SET @MergeSql =
+            N'SET NOCOUNT ON; '
+          + N'MERGE dba_db.Monitoring.FailedJobsAlerts AS dst '
+          + N'USING (SELECT '
+          + N'CAST(N''' + REPLACE(@ServerName, N'''', N'''''') + N''' AS NVARCHAR(256)) AS ServerName, '
+          + N'CAST(N''' + REPLACE(@JobName, N'''', N'''''') + N''' AS NVARCHAR(256)) AS JobName, '
+          + N'CAST(' + CAST(@FailureCount AS NVARCHAR(20)) + N' AS INT) AS FailureCount, '
+          + N'CAST(N''' + CONVERT(NVARCHAR(33), @FirstFailureTime, 126) + N''' AS DATETIME2) AS FirstFailureTime, '
+          + N'CAST(N''' + CONVERT(NVARCHAR(33), @LastFailureTime, 126) + N''' AS DATETIME2) AS LastFailureTime, '
+          + CASE WHEN @AlertSentTime IS NULL
+              THEN N'CAST(NULL AS DATETIME2) AS AlertSentTime, '
+              ELSE N'CAST(N''' + CONVERT(NVARCHAR(33), @AlertSentTime, 126) + N''' AS DATETIME2) AS AlertSentTime, '
+            END
+          + N'CAST(' + CAST(@IsResolved AS NVARCHAR(1)) + N' AS BIT) AS IsResolved, '
+          + CASE WHEN @ResolutionTime IS NULL
+              THEN N'CAST(NULL AS DATETIME2) AS ResolutionTime '
+              ELSE N'CAST(N''' + CONVERT(NVARCHAR(33), @ResolutionTime, 126) + N''' AS DATETIME2) AS ResolutionTime '
+            END
+          + N') AS src '
+          + N'ON dst.ServerName = src.ServerName AND dst.JobName = src.JobName '
+          + N'WHEN MATCHED THEN UPDATE SET '
+          + N'    dst.FailureCount = src.FailureCount, '
+          + N'    dst.FirstFailureTime = src.FirstFailureTime, '
+          + N'    dst.LastFailureTime = src.LastFailureTime, '
+          + N'    dst.AlertSentTime = src.AlertSentTime, '
+          + N'    dst.IsResolved = src.IsResolved, '
+          + N'    dst.ResolutionTime = src.ResolutionTime '
+          + N'WHEN NOT MATCHED THEN INSERT (ServerName, JobName, FailureCount, FirstFailureTime, LastFailureTime, AlertSentTime, IsResolved, ResolutionTime) '
+          + N'VALUES (src.ServerName, src.JobName, src.FailureCount, src.FirstFailureTime, src.LastFailureTime, src.AlertSentTime, src.IsResolved, src.ResolutionTime);';
+
+        SET @RunOnCentralCommand =
+            N'sqlcmd -S "' + REPLACE(@CentralEndpoint, N'"', N'""')
+          + N'" -d DBA_DB -E -N -C -b -Q "' + REPLACE(@MergeSql, N'"', N'\"') + N'"';
+
+        SET @xpCmd = CAST(@RunOnCentralCommand AS VARCHAR(8000));
+        EXEC master..xp_cmdshell @xpCmd, NO_OUTPUT;
+
+        FETCH NEXT FROM c INTO @ServerName, @JobName, @FailureCount, @FirstFailureTime, @LastFailureTime, @AlertSentTime, @IsResolved, @ResolutionTime;
+    END;
+
+    CLOSE c;
+    DEALLOCATE c;
+
+    IF @xpWasEnabled = 0
+    BEGIN
+        EXEC sp_configure 'xp_cmdshell', 0; RECONFIGURE;
+        EXEC sp_configure 'show advanced options', 0; RECONFIGURE;
+    END;
+
+    PRINT 'Push to central completed from target via sqlcmd.';
+END
+GO
+
+PRINT 'Stored procedure Monitoring.SP_PushFailedJobsAlertsToCentral created on target server.';

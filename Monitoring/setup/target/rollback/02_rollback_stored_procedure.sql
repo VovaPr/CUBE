@@ -13,4 +13,13 @@ ELSE
     PRINT 'Procedure Monitoring.SP_MonitoringJobs does not exist, nothing to drop.';
 GO
 
+IF OBJECT_ID('Monitoring.SP_PushFailedJobsAlertsToCentral', 'P') IS NOT NULL
+BEGIN
+    DROP PROCEDURE Monitoring.SP_PushFailedJobsAlertsToCentral;
+    PRINT 'Procedure Monitoring.SP_PushFailedJobsAlertsToCentral dropped.';
+END
+ELSE
+    PRINT 'Procedure Monitoring.SP_PushFailedJobsAlertsToCentral does not exist, nothing to drop.';
+GO
+
 PRINT 'Target rollback step 2 complete (procedure removed from ' + @@SERVERNAME + ').';

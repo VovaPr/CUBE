@@ -45,9 +45,45 @@ BEGIN
 END
 GO
 
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Collect Job Status')
+BEGIN
+    EXEC sp_delete_job @job_name = 'DBA - Collect Job Status', @delete_unused_schedule = 1;
+END
+GO
+
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Central Monitoring Jobs')
+BEGIN
+    EXEC sp_delete_job @job_name = 'DBA - Central Monitoring Jobs', @delete_unused_schedule = 1;
+END
+GO
+
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Target Monitoring Jobs')
+BEGIN
+    EXEC sp_delete_job @job_name = 'DBA - Target Monitoring Jobs', @delete_unused_schedule = 1;
+END
+GO
+
 IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Common Monitoring Alerts - Hourly at :05')
 BEGIN
     EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Common Monitoring Alerts - Hourly at :05', @force_delete = 1;
+END
+GO
+
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Collect Job Status - Hourly at :01')
+BEGIN
+    EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Collect Job Status - Hourly at :01', @force_delete = 1;
+END
+GO
+
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Central Monitoring Jobs - Hourly at :01')
+BEGIN
+    EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Central Monitoring Jobs - Hourly at :01', @force_delete = 1;
+END
+GO
+
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Target Monitoring Jobs - Hourly at :05')
+BEGIN
+    EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Target Monitoring Jobs - Hourly at :05', @force_delete = 1;
 END
 GO
 

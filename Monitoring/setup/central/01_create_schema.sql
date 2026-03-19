@@ -48,6 +48,22 @@ BEGIN
 END
 GO
 
+-- Technical log for central sqlcmd pull orchestration
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'TargetPullLog' AND schema_id = SCHEMA_ID('Monitoring'))
+BEGIN
+    CREATE TABLE Monitoring.TargetPullLog (
+        TargetPullLogID INT IDENTITY(1,1) PRIMARY KEY,
+        RunID UNIQUEIDENTIFIER NOT NULL,
+        TargetServer NVARCHAR(256) NULL,
+        Stage NVARCHAR(64) NOT NULL,
+        IsSuccess BIT NULL,
+        Message NVARCHAR(4000) NULL,
+        CommandText NVARCHAR(4000) NULL,
+        LoggedAt DATETIME2 NOT NULL DEFAULT GETDATE()
+    );
+END
+GO
+
 -- Recreate aggregated server state/registration table with the final schema.
 DECLARE @CentralEndpoint NVARCHAR(256) = N'DBMGMT\SQL01,10010';
 
@@ -77,6 +93,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Jobs_LastRunDate')
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_FailedJobsAlerts_AlertSentTime')
     CREATE INDEX IX_FailedJobsAlerts_AlertSentTime ON Monitoring.FailedJobsAlerts(AlertSentTime);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_TargetPullLog_LoggedAt')
+    CREATE INDEX IX_TargetPullLog_LoggedAt ON Monitoring.TargetPullLog(LoggedAt);
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Servers_CentralServerName')
     CREATE INDEX IX_Servers_CentralServerName ON Monitoring.Servers(CentralServerName);
