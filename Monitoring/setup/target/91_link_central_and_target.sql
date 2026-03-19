@@ -67,9 +67,9 @@ SELECT
     N''Local Monitoring.Servers'' AS Info,
     s.ServerName,
     s.CentralServerName,
+    s.IsActive,
     s.Central,
     s.Target,
-    s.IsActive,
     s.ModifiedAt
 FROM Monitoring.Servers s
 WHERE s.ServerName IN (@CentralEndpoint, @TargetInstanceName)
@@ -91,8 +91,8 @@ DECLARE @CentralMergeQuery NVARCHAR(MAX) =
   + N'WHEN MATCHED THEN UPDATE SET dst.CentralServerName = src.CentralServerName, dst.Central = src.Central, dst.Target = src.Target, dst.IsActive = src.IsActive, dst.ModifiedAt = GETDATE() '
   + N'WHEN NOT MATCHED THEN INSERT (ServerName, CentralServerName, Central, Target, IsActive) VALUES (src.ServerName, src.CentralServerName, src.Central, src.Target, src.IsActive); '
     + N'SELECT N''Central Monitoring.Servers'' AS Info, ServerName, CentralServerName, '
-    + N'Central, Target, '
-    + N'IsActive, ModifiedAt '
+    + N'IsActive, Central, Target, '
+    + N'ModifiedAt '
     + N'FROM Monitoring.Servers WHERE ServerName = N''' + REPLACE(@TargetInstanceName, N'''', N'''''') + N''';';
 
 DECLARE @RunOnTargetCommand NVARCHAR(MAX) =

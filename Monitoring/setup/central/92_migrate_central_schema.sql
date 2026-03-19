@@ -71,7 +71,7 @@ GO
 
 -- 6. Final verification (sp_executesql so new columns are resolved at runtime)
 EXEC sp_executesql N'
-SELECT ServerName, CentralServerName, Central, Target, IsActive, ModifiedAt
+SELECT ServerName, CentralServerName, IsActive, Central, Target, ModifiedAt
 FROM Monitoring.Servers
 ORDER BY Central DESC, ServerName;
 ';
