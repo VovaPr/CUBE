@@ -19,8 +19,12 @@ BEGIN
     DECLARE @AlertBody NVARCHAR(MAX);
     DECLARE @AlertSubject NVARCHAR(256);
     DECLARE @ResolvedEmailRecipient NVARCHAR(256);
-    DECLARE @SubjectServerName NVARCHAR(256);
-    DECLARE @SubjectJobName NVARCHAR(256);
+    DECLARE @AlertID INT;
+    DECLARE @ServerName NVARCHAR(256);
+    DECLARE @JobName NVARCHAR(256);
+    DECLARE @FailureCount INT;
+    DECLARE @FirstFailureTime DATETIME2;
+    DECLARE @LastFailureTime DATETIME2;
     
     BEGIN TRY
         SET @ResolvedEmailRecipient = @EmailRecipient;
@@ -48,48 +52,46 @@ BEGIN
         
         IF @FailedJobCount > 0
         BEGIN
-                        SELECT TOP (1)
-                                @SubjectServerName = ServerName,
-                                @SubjectJobName = JobName
-                        FROM Monitoring.FailedJobsAlerts
-                        WHERE IsResolved = 0
-                            AND (AlertSentTime IS NULL OR AlertSentTime < DATEADD(MINUTE, -50, GETDATE()))
-                        ORDER BY LastFailureTime DESC;
+            DECLARE curFailedAlerts CURSOR LOCAL FAST_FORWARD FOR
+                SELECT AlertID, ServerName, JobName, FailureCount, FirstFailureTime, LastFailureTime
+                FROM Monitoring.FailedJobsAlerts
+                WHERE IsResolved = 0
+                  AND (AlertSentTime IS NULL OR AlertSentTime < DATEADD(MINUTE, -50, GETDATE()))
+                ORDER BY LastFailureTime DESC;
 
-                        SET @AlertSubject = N'Failed Job ' + ISNULL(@SubjectServerName, N'(unknown server)') + N': ' + ISNULL(@SubjectJobName, N'(unknown job)');
+            OPEN curFailedAlerts;
+            FETCH NEXT FROM curFailedAlerts INTO @AlertID, @ServerName, @JobName, @FailureCount, @FirstFailureTime, @LastFailureTime;
 
-                        IF @FailedJobCount > 1
-                                SET @AlertSubject = @AlertSubject + N' (+' + CAST(@FailedJobCount - 1 AS NVARCHAR(10)) + N' more)';
-            
-            SET @AlertBody = 'Active Failed Jobs Alert' + CHAR(10) + CHAR(10);
-            SET @AlertBody = @AlertBody + 'The following SQL Server Agent jobs are currently failing:' + CHAR(10) + CHAR(10);
-            
-            SELECT @AlertBody = @AlertBody + 
-                'Server: ' + ServerName + CHAR(10) +
-                'Job: ' + JobName + CHAR(10) +
-                'First Failure: ' + FORMAT(FirstFailureTime, 'yyyy-MM-dd HH:mm:ss') + CHAR(10) +
-                'Last Failure: ' + FORMAT(LastFailureTime, 'yyyy-MM-dd HH:mm:ss') + CHAR(10) +
-                'Failure Count (last hour): ' + CAST(FailureCount AS NVARCHAR(10)) + CHAR(10) + CHAR(10)
-            FROM Monitoring.FailedJobsAlerts
-            WHERE IsResolved = 0
-                AND (AlertSentTime IS NULL OR AlertSentTime < DATEADD(MINUTE, -50, GETDATE()))
-            ORDER BY ServerName, LastFailureTime DESC;
-            
-            -- Send email using SQL Server Mail
-            EXEC msdb.dbo.sp_send_dbmail
-                @profile_name = @MailProfile,
-                @recipients = @ResolvedEmailRecipient,
-                @subject = @AlertSubject,
-                @body = @AlertBody,
-                @body_format = 'TEXT';
-            
-            -- Update AlertSentTime for notified alerts
-            UPDATE Monitoring.FailedJobsAlerts
-            SET AlertSentTime = GETDATE()
-            WHERE IsResolved = 0
-                AND (AlertSentTime IS NULL OR AlertSentTime < DATEADD(MINUTE, -50, GETDATE()));
-            
-            PRINT 'Email alert sent successfully to: ' + @ResolvedEmailRecipient;
+            WHILE @@FETCH_STATUS = 0
+            BEGIN
+                SET @AlertSubject = N'Failed Job ' + ISNULL(@ServerName, N'(unknown server)') + N': ' + ISNULL(@JobName, N'(unknown job)');
+
+                SET @AlertBody =
+                    N'The following SQL Server Agent job is currently failing:' + CHAR(10) + CHAR(10) +
+                    N'Server: ' + ISNULL(@ServerName, N'') + CHAR(10) + CHAR(10) +
+                    N'Job: ' + ISNULL(@JobName, N'') + CHAR(10) + CHAR(10) +
+                    N'First Failure: ' + ISNULL(CONVERT(NVARCHAR(19), @FirstFailureTime, 120), N'') + CHAR(10) + CHAR(10) +
+                    N'Last Failure: ' + ISNULL(CONVERT(NVARCHAR(19), @LastFailureTime, 120), N'') + CHAR(10) + CHAR(10) +
+                    N'Failure Count (last hour): ' + CAST(ISNULL(@FailureCount, 0) AS NVARCHAR(10));
+
+                EXEC msdb.dbo.sp_send_dbmail
+                    @profile_name = @MailProfile,
+                    @recipients = @ResolvedEmailRecipient,
+                    @subject = @AlertSubject,
+                    @body = @AlertBody,
+                    @body_format = 'TEXT';
+
+                UPDATE Monitoring.FailedJobsAlerts
+                SET AlertSentTime = GETDATE()
+                WHERE AlertID = @AlertID;
+
+                FETCH NEXT FROM curFailedAlerts INTO @AlertID, @ServerName, @JobName, @FailureCount, @FirstFailureTime, @LastFailureTime;
+            END;
+
+            CLOSE curFailedAlerts;
+            DEALLOCATE curFailedAlerts;
+
+            PRINT 'Email alerts sent successfully to: ' + @ResolvedEmailRecipient;
         END
         ELSE
         BEGIN
