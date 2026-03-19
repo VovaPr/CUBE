@@ -24,6 +24,18 @@ ELSE
     PRINT 'Job "DBA - Monitoring Alerts" does not exist, nothing to delete.';
 GO
 
+-- Remove legacy Job: DBA - Common Monitoring Alerts
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Common Monitoring Alerts')
+BEGIN
+    EXEC sp_delete_job
+        @job_name = 'DBA - Common Monitoring Alerts',
+        @delete_unused_schedule = 1;
+    PRINT 'Legacy job "DBA - Common Monitoring Alerts" deleted.';
+END
+ELSE
+    PRINT 'Legacy job "DBA - Common Monitoring Alerts" does not exist, nothing to delete.';
+GO
+
 -- Safety: drop orphaned schedule if still present
 IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Monitoring Alerts - Every Hour')
 BEGIN
@@ -31,6 +43,15 @@ BEGIN
         @schedule_name = 'DBA - Monitoring Alerts - Every Hour',
         @force_delete = 1;
     PRINT 'Schedule "DBA - Monitoring Alerts - Every Hour" deleted.';
+END
+GO
+
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Common Monitoring Alerts - Hourly at :05')
+BEGIN
+    EXEC msdb.dbo.sp_delete_schedule
+        @schedule_name = 'DBA - Common Monitoring Alerts - Hourly at :05',
+        @force_delete = 1;
+    PRINT 'Legacy schedule "DBA - Common Monitoring Alerts - Hourly at :05" deleted.';
 END
 GO
 

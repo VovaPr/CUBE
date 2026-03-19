@@ -38,6 +38,19 @@ BEGIN
 END
 GO
 
+-- Remove legacy target-side alert sync job from older deployments
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Common Monitoring Alerts')
+BEGIN
+    EXEC sp_delete_job @job_name = 'DBA - Common Monitoring Alerts', @delete_unused_schedule = 1;
+END
+GO
+
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Common Monitoring Alerts - Hourly at :05')
+BEGIN
+    EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Common Monitoring Alerts - Hourly at :05', @force_delete = 1;
+END
+GO
+
 -- Remove existing job
 IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Monitoring Alerts')
 BEGIN
