@@ -25,6 +25,8 @@ BEGIN
     DECLARE @FailureCount INT;
     DECLARE @FirstFailureTime DATETIME2;
     DECLARE @LastFailureTime DATETIME2;
+    DECLARE @ServerNameHtml NVARCHAR(512);
+    DECLARE @JobNameHtml NVARCHAR(512);
     
     BEGIN TRY
         SET @ResolvedEmailRecipient = @EmailRecipient;
@@ -64,14 +66,17 @@ BEGIN
 
             WHILE @@FETCH_STATUS = 0
             BEGIN
-                SET @AlertSubject = N'Failed Job ' + ISNULL(@ServerName, N'(unknown server)') + N': ' + ISNULL(@JobName, N'(unknown job)');
+                SET @AlertSubject = N'Failed Job on ' + ISNULL(@ServerName, N'(unknown server)') + N' Job: ' + ISNULL(@JobName, N'(unknown job)');
+
+                SET @ServerNameHtml = REPLACE(REPLACE(REPLACE(ISNULL(@ServerName, N''), N'&', N'&amp;'), N'<', N'&lt;'), N'>', N'&gt;');
+                SET @JobNameHtml = REPLACE(REPLACE(REPLACE(ISNULL(@JobName, N''), N'&', N'&amp;'), N'<', N'&lt;'), N'>', N'&gt;');
 
                 SET @AlertBody =
-                    N'The following SQL Server Agent job is currently failing:' + CHAR(10) + CHAR(10) +
-                    N'Server: ' + ISNULL(@ServerName, N'') + CHAR(10) + CHAR(10) +
-                    N'Job: ' + ISNULL(@JobName, N'') + CHAR(10) + CHAR(10) +
-                    N'First Failure: ' + ISNULL(CONVERT(NVARCHAR(19), @FirstFailureTime, 120), N'') + CHAR(10) + CHAR(10) +
-                    N'Last Failure: ' + ISNULL(CONVERT(NVARCHAR(19), @LastFailureTime, 120), N'') + CHAR(10) + CHAR(10) +
+                    N'The following SQL Server Agent job is currently failing:<br/>' +
+                    N'<b>Server:</b> <b>' + @ServerNameHtml + N'</b><br/>' +
+                    N'<b>Job:</b> <b>' + @JobNameHtml + N'</b><br/>' +
+                    N'First Failure: ' + ISNULL(CONVERT(NVARCHAR(19), @FirstFailureTime, 120), N'') + N'<br/>' +
+                    N'Last Failure: ' + ISNULL(CONVERT(NVARCHAR(19), @LastFailureTime, 120), N'') + N'<br/>' +
                     N'Failure Count (last hour): ' + CAST(ISNULL(@FailureCount, 0) AS NVARCHAR(10));
 
                 EXEC msdb.dbo.sp_send_dbmail
@@ -79,7 +84,7 @@ BEGIN
                     @recipients = @ResolvedEmailRecipient,
                     @subject = @AlertSubject,
                     @body = @AlertBody,
-                    @body_format = 'TEXT';
+                    @body_format = 'HTML';
 
                 UPDATE Monitoring.FailedJobsAlerts
                 SET AlertSentTime = GETDATE()
