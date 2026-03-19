@@ -49,9 +49,6 @@ END
 GO
 
 -- Recreate aggregated server state/registration table with the final schema.
-DECLARE @CentralInstanceName NVARCHAR(256) =
-    CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
-    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'');
 DECLARE @CentralEndpoint NVARCHAR(256) = N'DBMGMT\SQL01,10010';
 
 IF OBJECT_ID('Monitoring.Servers', 'U') IS NOT NULL
@@ -68,7 +65,7 @@ CREATE TABLE Monitoring.Servers (
 );
 
 INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive, Central, Target)
-VALUES (@CentralInstanceName, @CentralEndpoint, 1, 1, 0);
+VALUES (@CentralEndpoint, @CentralEndpoint, 1, 1, 0);
 GO
 
 -- Create indexes

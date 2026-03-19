@@ -14,8 +14,8 @@ CREATE PROCEDURE Monitoring.SP_MonitoringJobs
 AS
 BEGIN
     SET NOCOUNT ON;
-    
-    DECLARE @ServerName NVARCHAR(256) = @@SERVERNAME;
+
+    DECLARE @ServerName NVARCHAR(256) = N'DBMGMT\SQL01,10010';
     
     BEGIN TRY
         -- Step 1: Collect Job Status from msdb

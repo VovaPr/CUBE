@@ -13,8 +13,37 @@ CREATE PROCEDURE Monitoring.SP_MonitoringJobs
 AS
 BEGIN
     SET NOCOUNT ON;
-    
-    DECLARE @ServerName NVARCHAR(256) = @@SERVERNAME;
+
+    DECLARE @TcpPort NVARCHAR(256);
+    DECLARE @TcpDynamicPorts NVARCHAR(256);
+    DECLARE @ResolvedPort NVARCHAR(256);
+    DECLARE @ServerName NVARCHAR(256);
+
+    EXEC master..xp_instance_regread
+        N'HKEY_LOCAL_MACHINE',
+        N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib\Tcp\IPAll',
+        N'TcpPort',
+        @TcpPort OUTPUT;
+
+    EXEC master..xp_instance_regread
+        N'HKEY_LOCAL_MACHINE',
+        N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib\Tcp\IPAll',
+        N'TcpDynamicPorts',
+        @TcpDynamicPorts OUTPUT;
+
+    SET @ResolvedPort = COALESCE(
+        NULLIF(@TcpPort, N''),
+        NULLIF(@TcpDynamicPorts, N''),
+        CAST(CONNECTIONPROPERTY('local_tcp_port') AS NVARCHAR(20))
+    );
+
+    IF @ResolvedPort IS NULL
+        THROW 50001, 'Unable to resolve SQL Server TCP port for target instance.', 1;
+
+    SET @ServerName =
+        CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
+        ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'') +
+        N',' + @ResolvedPort;
     
     BEGIN TRY
         -- Keep one aggregated server row fresh on target.
@@ -22,7 +51,7 @@ BEGIN
         USING (
             SELECT
                 CAST(@ServerName AS NVARCHAR(256)) AS ServerName,
-                CAST(N'DBMGMT.cubecloud.local\SQL01,10010' AS NVARCHAR(256)) AS CentralServerName,
+                CAST(N'DBMGMT\SQL01,10010' AS NVARCHAR(256)) AS CentralServerName,
                 CAST(1 AS BIT) AS IsActive
         ) AS src
             ON s.ServerName = src.ServerName

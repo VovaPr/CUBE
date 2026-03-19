@@ -8,9 +8,39 @@
 SET NOCOUNT ON;
 
 DECLARE @CentralEndpoint    NVARCHAR(256) = N'DBMGMT\SQL01,10010';
-DECLARE @TargetInstanceName NVARCHAR(256) =
+DECLARE @TcpPort NVARCHAR(256);
+DECLARE @TcpDynamicPorts NVARCHAR(256);
+DECLARE @ResolvedPort NVARCHAR(256);
+DECLARE @TargetInstanceName NVARCHAR(256);
+
+EXEC master..xp_instance_regread
+    N'HKEY_LOCAL_MACHINE',
+    N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib\Tcp\IPAll',
+    N'TcpPort',
+    @TcpPort OUTPUT;
+
+EXEC master..xp_instance_regread
+    N'HKEY_LOCAL_MACHINE',
+    N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib\Tcp\IPAll',
+    N'TcpDynamicPorts',
+    @TcpDynamicPorts OUTPUT;
+
+SET @ResolvedPort = COALESCE(
+    NULLIF(@TcpPort, N''),
+    NULLIF(@TcpDynamicPorts, N''),
+    CAST(CONNECTIONPROPERTY('local_tcp_port') AS NVARCHAR(20))
+);
+
+IF @ResolvedPort IS NULL
+BEGIN
+    RAISERROR(N'Unable to resolve SQL Server TCP port for target instance.', 16, 1);
+    RETURN;
+END;
+
+SET @TargetInstanceName =
     CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
-    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'');
+    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'') +
+    N',' + @ResolvedPort;
 
 USE DBA_DB;
 
@@ -41,9 +71,39 @@ GO
 -- Part 1: insert rows and show local state
 -- (separate batch so columns are resolved fresh after CREATE TABLE)
 DECLARE @CentralEndpoint    NVARCHAR(256) = N'DBMGMT\SQL01,10010';
-DECLARE @TargetInstanceName NVARCHAR(256) =
+DECLARE @TcpPort NVARCHAR(256);
+DECLARE @TcpDynamicPorts NVARCHAR(256);
+DECLARE @ResolvedPort NVARCHAR(256);
+DECLARE @TargetInstanceName NVARCHAR(256);
+
+EXEC master..xp_instance_regread
+    N'HKEY_LOCAL_MACHINE',
+    N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib\Tcp\IPAll',
+    N'TcpPort',
+    @TcpPort OUTPUT;
+
+EXEC master..xp_instance_regread
+    N'HKEY_LOCAL_MACHINE',
+    N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib\Tcp\IPAll',
+    N'TcpDynamicPorts',
+    @TcpDynamicPorts OUTPUT;
+
+SET @ResolvedPort = COALESCE(
+    NULLIF(@TcpPort, N''),
+    NULLIF(@TcpDynamicPorts, N''),
+    CAST(CONNECTIONPROPERTY('local_tcp_port') AS NVARCHAR(20))
+);
+
+IF @ResolvedPort IS NULL
+BEGIN
+    RAISERROR(N'Unable to resolve SQL Server TCP port for target instance.', 16, 1);
+    RETURN;
+END;
+
+SET @TargetInstanceName =
     CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
-    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'');
+    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'') +
+    N',' + @ResolvedPort;
 
 INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive, Central, Target)
 VALUES (@CentralEndpoint, @CentralEndpoint, 1, 1, 0);
@@ -59,9 +119,39 @@ GO
 
 -- Part 2: push TARGET registration to CENTRAL
 DECLARE @CentralEndpoint    NVARCHAR(256) = N'DBMGMT\SQL01,10010';
-DECLARE @TargetInstanceName NVARCHAR(256) =
+DECLARE @TcpPort NVARCHAR(256);
+DECLARE @TcpDynamicPorts NVARCHAR(256);
+DECLARE @ResolvedPort NVARCHAR(256);
+DECLARE @TargetInstanceName NVARCHAR(256);
+
+EXEC master..xp_instance_regread
+    N'HKEY_LOCAL_MACHINE',
+    N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib\Tcp\IPAll',
+    N'TcpPort',
+    @TcpPort OUTPUT;
+
+EXEC master..xp_instance_regread
+    N'HKEY_LOCAL_MACHINE',
+    N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib\Tcp\IPAll',
+    N'TcpDynamicPorts',
+    @TcpDynamicPorts OUTPUT;
+
+SET @ResolvedPort = COALESCE(
+    NULLIF(@TcpPort, N''),
+    NULLIF(@TcpDynamicPorts, N''),
+    CAST(CONNECTIONPROPERTY('local_tcp_port') AS NVARCHAR(20))
+);
+
+IF @ResolvedPort IS NULL
+BEGIN
+    RAISERROR(N'Unable to resolve SQL Server TCP port for target instance.', 16, 1);
+    RETURN;
+END;
+
+SET @TargetInstanceName =
     CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
-    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'');
+    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'') +
+    N',' + @ResolvedPort;
 
 DECLARE @CentralMergeQuery NVARCHAR(MAX) =
     N'SET NOCOUNT ON; '
