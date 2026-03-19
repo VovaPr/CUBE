@@ -248,11 +248,10 @@ BEGIN
                                 x.IsResolved,
                                 TRY_CONVERT(DATETIME2, x.ResolutionTime, 126) AS ResolutionTime,
                                 ROW_NUMBER() OVER (
-                                    PARTITION BY x.ServerName, x.JobName
+                                    PARTITION BY x.ServerName, x.JobName, TRY_CONVERT(DATETIME2, x.FirstFailureTime, 126)
                                     ORDER BY
-                                        CASE WHEN x.IsResolved = 0 THEN 0 ELSE 1 END,
                                         TRY_CONVERT(DATETIME2, x.LastFailureTime, 126) DESC,
-                                        TRY_CONVERT(DATETIME2, x.FirstFailureTime, 126) DESC
+                                        CASE WHEN x.IsResolved = 0 THEN 0 ELSE 1 END
                                 ) AS rn
                             FROM OPENJSON(@TargetJson)
                             WITH (
@@ -270,10 +269,13 @@ BEGIN
                     ) AS src
                         ON dst.ServerName = src.ServerName
                        AND dst.JobName = src.JobName
+                       AND (
+                            dst.FirstFailureTime = src.FirstFailureTime
+                            OR (dst.FirstFailureTime IS NULL AND src.FirstFailureTime IS NULL)
+                       )
                     WHEN MATCHED THEN
                         UPDATE SET
                             dst.FailureCount = src.FailureCount,
-                            dst.FirstFailureTime = src.FirstFailureTime,
                             dst.LastFailureTime = src.LastFailureTime,
                             dst.AlertSentTime = src.AlertSentTime,
                             dst.IsResolved = src.IsResolved,
