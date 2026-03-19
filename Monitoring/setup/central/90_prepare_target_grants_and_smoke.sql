@@ -128,24 +128,6 @@ END;
 CLOSE curRoles;
 DEALLOCATE curRoles;
 
--- Selected service accounts on central
-SELECT
-    N'Selected service account' AS Info,
-    l.Principal
-FROM @ServiceLogins l
-ORDER BY l.Principal;
-
--- Verification on central
-SELECT
-    N'Final membership' AS Info,
-    m.name AS Principal,
-    r.name AS RoleName
-FROM sys.database_role_members drm
-JOIN sys.database_principals r ON r.principal_id = drm.role_principal_id
-JOIN sys.database_principals m ON m.principal_id = drm.member_principal_id
-WHERE m.name IN (SELECT Principal FROM @ServiceLogins)
-ORDER BY m.name, r.name;
-
 -- Output target-side SQL script (copy and run on TARGET).
 DECLARE @TargetScript NVARCHAR(MAX) = N'';
 
@@ -223,6 +205,4 @@ N'FROM Monitoring.Servers' + CHAR(13) + CHAR(10) +
 N'WHERE ServerName IN (@TargetServerName, @CentralEndpoint)' + CHAR(13) + CHAR(10) +
 N'ORDER BY ServerName;';
 
-SELECT
-    N'Run on TARGET' AS Info,
-    @TargetScript AS TargetSql;
+SELECT @TargetScript AS TargetSql;
