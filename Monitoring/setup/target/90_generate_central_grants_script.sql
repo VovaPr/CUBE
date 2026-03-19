@@ -6,6 +6,7 @@
 -- result set and run it on CENTRAL.
 
 SET NOCOUNT ON;
+SET TEXTSIZE 2147483647;
 
 DECLARE @ServiceAccount NVARCHAR(256);
 
@@ -19,10 +20,6 @@ BEGIN
     RAISERROR('SQL Server Agent service account not found on target.', 16, 1);
     RETURN;
 END;
-
-SELECT
-    @@SERVERNAME AS TargetServer,
-    @ServiceAccount AS ServiceAccount;
 
 DECLARE @ScriptForCentral NVARCHAR(MAX) = N'
 /* RUN ON CENTRAL */
@@ -94,4 +91,4 @@ WHERE m.name = @ServiceAccount
 ORDER BY r.name;
 ';
 
-SELECT @ScriptForCentral AS ScriptForCentral;
+SELECT @ScriptForCentral;
