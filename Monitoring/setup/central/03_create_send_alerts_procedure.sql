@@ -19,6 +19,8 @@ BEGIN
     DECLARE @AlertBody NVARCHAR(MAX);
     DECLARE @AlertSubject NVARCHAR(256);
     DECLARE @ResolvedEmailRecipient NVARCHAR(256);
+    DECLARE @SubjectServerName NVARCHAR(256);
+    DECLARE @SubjectJobName NVARCHAR(256);
     
     BEGIN TRY
         SET @ResolvedEmailRecipient = @EmailRecipient;
@@ -46,7 +48,18 @@ BEGIN
         
         IF @FailedJobCount > 0
         BEGIN
-            SET @AlertSubject = 'SQL Server Job Alert - ' + CAST(@FailedJobCount AS NVARCHAR(10)) + ' Failed Jobs Detected';
+                        SELECT TOP (1)
+                                @SubjectServerName = ServerName,
+                                @SubjectJobName = JobName
+                        FROM Monitoring.FailedJobsAlerts
+                        WHERE IsResolved = 0
+                            AND (AlertSentTime IS NULL OR AlertSentTime < DATEADD(MINUTE, -50, GETDATE()))
+                        ORDER BY LastFailureTime DESC;
+
+                        SET @AlertSubject = N'Failed Job ' + ISNULL(@SubjectServerName, N'(unknown server)') + N': ' + ISNULL(@SubjectJobName, N'(unknown job)');
+
+                        IF @FailedJobCount > 1
+                                SET @AlertSubject = @AlertSubject + N' (+' + CAST(@FailedJobCount - 1 AS NVARCHAR(10)) + N' more)';
             
             SET @AlertBody = 'Active Failed Jobs Alert' + CHAR(10) + CHAR(10);
             SET @AlertBody = @AlertBody + 'The following SQL Server Agent jobs are currently failing:' + CHAR(10) + CHAR(10);
