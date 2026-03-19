@@ -1,6 +1,7 @@
 -- Utility Script - Step 91 (run on TARGET)
 -- Purpose:
--- 1) Ensure TARGET local Monitoring.Servers row is up to date.
+-- 1) Ensure TARGET local Monitoring.Servers rows are up to date
+--    (one row for CENTRAL and one row for TARGET).
 -- 2) Send TARGET server name registration to CENTRAL (DBMGMT\SQL01,10010)
 --    through xp_cmdshell + sqlcmd.
 -- 3) Verify central row through sqlcmd (no linked servers).
@@ -36,14 +37,35 @@ WHEN NOT MATCHED THEN
     INSERT (ServerName, CentralServerName, IsActive)
     VALUES (src.ServerName, src.CentralServerName, src.IsActive);
 
+-- Ensure local CENTRAL marker row exists on target.
+MERGE Monitoring.Servers AS dst
+USING (
+    SELECT
+        @CentralEndpoint AS ServerName,
+        @CentralEndpoint AS CentralServerName,
+        CAST(1 AS BIT) AS IsActive
+) AS src
+    ON dst.ServerName = src.ServerName
+WHEN MATCHED THEN
+    UPDATE SET
+        dst.CentralServerName = src.CentralServerName,
+        dst.IsActive = src.IsActive,
+        dst.ModifiedAt = GETDATE()
+WHEN NOT MATCHED THEN
+    INSERT (ServerName, CentralServerName, IsActive)
+    VALUES (src.ServerName, src.CentralServerName, src.IsActive);
+
 SELECT
-    N'Local target registration' AS Info,
+    N'Local Monitoring.Servers' AS Info,
     s.ServerName,
     s.CentralServerName,
+    CAST(CASE WHEN s.ServerName = @CentralEndpoint THEN 1 ELSE 0 END AS BIT) AS Central,
+    CAST(CASE WHEN s.ServerName = @TargetServerName THEN 1 ELSE 0 END AS BIT) AS Target,
     s.IsActive,
     s.ModifiedAt
 FROM Monitoring.Servers s
-WHERE s.ServerName = @TargetServerName;
+WHERE s.ServerName IN (@CentralEndpoint, @TargetServerName)
+ORDER BY s.ServerName;
 
 -- Build CENTRAL merge command to run from TARGET via sqlcmd.
 -- This sends the TARGET server name to central Monitoring.Servers.
@@ -56,7 +78,10 @@ DECLARE @CentralMergeQuery NVARCHAR(MAX) =
   + N'ON dst.ServerName = src.ServerName '
   + N'WHEN MATCHED THEN UPDATE SET dst.CentralServerName = src.CentralServerName, dst.IsActive = src.IsActive, dst.ModifiedAt = GETDATE() '
   + N'WHEN NOT MATCHED THEN INSERT (ServerName, CentralServerName, IsActive) VALUES (src.ServerName, src.CentralServerName, src.IsActive); '
-  + N'SELECT N''Central registration'' AS Info, ServerName, CentralServerName, IsActive, ModifiedAt '
+    + N'SELECT N''Central Monitoring.Servers'' AS Info, ServerName, CentralServerName, '
+    + N'CAST(CASE WHEN ServerName = N''' + REPLACE(@CentralEndpoint, N'''', N'''''') + N''' THEN 1 ELSE 0 END AS BIT) AS Central, '
+    + N'CAST(CASE WHEN ServerName = N''' + REPLACE(@TargetServerName, N'''', N'''''') + N''' THEN 1 ELSE 0 END AS BIT) AS Target, '
+    + N'IsActive, ModifiedAt '
   + N'FROM Monitoring.Servers WHERE ServerName = N''' + REPLACE(@TargetServerName, N'''', N'''''') + N''';';
 
 DECLARE @RunOnTargetCommand NVARCHAR(MAX) =
