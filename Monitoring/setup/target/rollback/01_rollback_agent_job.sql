@@ -12,17 +12,31 @@ USE msdb;
 GO
 
 -- ============================================================
--- Remove Job: DBA - Monitoring Alerts
+-- Remove Job: DBA - Monitoring Jobs (current version)
+-- ============================================================
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Monitoring Jobs')
+BEGIN
+    EXEC sp_delete_job
+        @job_name = 'DBA - Monitoring Jobs',
+        @delete_unused_schedule = 1;
+    PRINT 'Job "DBA - Monitoring Jobs" deleted.';
+END
+ELSE
+    PRINT 'Job "DBA - Monitoring Jobs" does not exist, nothing to delete.';
+GO
+
+-- ============================================================
+-- Remove Job: DBA - Monitoring Alerts (legacy)
 -- ============================================================
 IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Monitoring Alerts')
 BEGIN
     EXEC sp_delete_job
         @job_name = 'DBA - Monitoring Alerts',
         @delete_unused_schedule = 1;
-    PRINT 'Job "DBA - Monitoring Alerts" deleted.';
+    PRINT 'Legacy job "DBA - Monitoring Alerts" deleted.';
 END
 ELSE
-    PRINT 'Job "DBA - Monitoring Alerts" does not exist, nothing to delete.';
+    PRINT 'Legacy job "DBA - Monitoring Alerts" does not exist, nothing to delete.';
 GO
 
 -- Remove legacy Job: DBA - Common Monitoring Alerts
@@ -73,13 +87,22 @@ ELSE
     PRINT 'Legacy job "DBA - Target Monitoring Jobs" does not exist, nothing to delete.';
 GO
 
--- Safety: drop orphaned schedule if still present
+-- Safety: drop orphaned schedules if still present
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Monitoring Jobs - Every 30 Minutes')
+BEGIN
+    EXEC msdb.dbo.sp_delete_schedule
+        @schedule_name = 'DBA - Monitoring Jobs - Every 30 Minutes',
+        @force_delete = 1;
+    PRINT 'Schedule "DBA - Monitoring Jobs - Every 30 Minutes" deleted.';
+END
+GO
+
 IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Monitoring Alerts - Every Hour')
 BEGIN
     EXEC msdb.dbo.sp_delete_schedule
         @schedule_name = 'DBA - Monitoring Alerts - Every Hour',
         @force_delete = 1;
-    PRINT 'Schedule "DBA - Monitoring Alerts - Every Hour" deleted.';
+    PRINT 'Legacy schedule "DBA - Monitoring Alerts - Every Hour" deleted.';
 END
 GO
 

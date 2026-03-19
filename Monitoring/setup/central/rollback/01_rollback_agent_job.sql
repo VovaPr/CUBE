@@ -26,13 +26,31 @@ ELSE
     PRINT 'Job "DBA - Monitoring Jobs" does not exist, nothing to delete.';
 GO
 
--- Safety: drop orphaned schedule if still present
+-- Safety: drop orphaned schedules if still present
 IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Monitoring Jobs - Hourly at :01')
 BEGIN
     EXEC msdb.dbo.sp_delete_schedule
         @schedule_name = 'DBA - Monitoring Jobs - Hourly at :01',
         @force_delete = 1;
     PRINT 'Schedule "DBA - Monitoring Jobs - Hourly at :01" deleted.';
+END
+GO
+
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Central Monitoring Jobs - Hourly at :01')
+BEGIN
+    EXEC msdb.dbo.sp_delete_schedule
+        @schedule_name = 'DBA - Central Monitoring Jobs - Hourly at :01',
+        @force_delete = 1;
+    PRINT 'Legacy schedule "DBA - Central Monitoring Jobs - Hourly at :01" deleted.';
+END
+GO
+
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Target Monitoring Jobs - Hourly at :05')
+BEGIN
+    EXEC msdb.dbo.sp_delete_schedule
+        @schedule_name = 'DBA - Target Monitoring Jobs - Hourly at :05',
+        @force_delete = 1;
+    PRINT 'Legacy schedule "DBA - Target Monitoring Jobs - Hourly at :05" deleted.';
 END
 GO
 
