@@ -106,19 +106,21 @@ BEGIN
         INSERT (ServerName, JobName, FailureCount, FirstFailureTime, LastFailureTime)
         VALUES (fj.ServerName, fj.JobName, fj.FailureCount, fj.LastFailureTime, fj.LastFailureTime);
 
-    UPDATE Monitoring.FailedJobsAlerts
-    SET IsResolved = 1,
-        ResolutionTime = GETDATE()
-    WHERE IsResolved = 0
-      AND ServerName = @ServerName
-      AND NOT EXISTS (
-            SELECT 1
-            FROM Monitoring.Jobs js
-            WHERE js.ServerName = Monitoring.FailedJobsAlerts.ServerName
-              AND js.JobName = Monitoring.FailedJobsAlerts.JobName
-              AND js.LastRunStatus = 0
-              AND js.LastRunDate >= DATEADD(HOUR, -1, GETDATE())
-      );
+        UPDATE fa
+        SET fa.IsResolved = 1,
+                fa.ResolutionTime = GETDATE()
+        FROM Monitoring.FailedJobsAlerts fa
+        WHERE fa.IsResolved = 0
+            AND fa.ServerName = @ServerName
+            AND EXISTS (
+                        SELECT 1
+                        FROM Monitoring.Jobs js
+                        WHERE js.ServerName = fa.ServerName
+                            AND js.JobName = fa.JobName
+                            AND js.LastRunStatus = 1
+                            AND js.LastRunDate IS NOT NULL
+                            AND js.LastRunDate >= fa.LastFailureTime
+            );
 
     PRINT 'Failed job analysis completed successfully.';
 END
