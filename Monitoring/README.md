@@ -32,7 +32,7 @@ The **Central Server** also has all of the above objects and runs the orchestrat
 
 - **setup/central/** - Central server setup (DBMGMT.cubecloud.local\SQL01,10010):
   - `01_create_schema.sql` – creates `Monitoring` schema/tables including `Monitoring.TargetPullLog`, final `Monitoring.Servers` layout, and central row
-  - `02_create_stored_procedure.sql` – defines `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts`, `Monitoring.SP_MonitoringJobs`, `Monitoring.SP_PullTargetFailedJobsAlerts`
+  - `02_create_stored_procedure.sql` – defines `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts`, `Monitoring.SP_PullTargetFailedJobsAlerts`
   - `03_create_send_alerts_procedure.sql` – defines `Monitoring.SP_SendAlerts`
   - `04_create_agent_job.sql` – creates **DBA - Monitoring Jobs** (runs at **:01** every hour):
     - Step 1: Collect Current Jobs → calls `Monitoring.SP_CollectJobs`
@@ -44,7 +44,7 @@ The **Central Server** also has all of the above objects and runs the orchestrat
 - **setup/central/rollback/** – Central rollback scripts:
   - `01_rollback_agent_job.sql` – removes central jobs and operator
   - `02_rollback_send_alerts_procedure.sql` – drops `Monitoring.SP_SendAlerts`
-  - `03_rollback_stored_procedure.sql` – drops `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts`, `Monitoring.SP_MonitoringJobs`, `Monitoring.SP_PullTargetFailedJobsAlerts`
+  - `03_rollback_stored_procedure.sql` – drops `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts`, `Monitoring.SP_PullTargetFailedJobsAlerts`
   - `04_rollback_schema.sql` – drops monitoring tables and schema
 
 - **setup/target/** – Target server setup (all monitored servers):

@@ -128,24 +128,6 @@ BEGIN
 END
 GO
 
-CREATE PROCEDURE Monitoring.SP_MonitoringJobs
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    BEGIN TRY
-        EXEC Monitoring.SP_CollectJobs;
-        EXEC Monitoring.SP_RefreshFailedJobsAlerts;
-    END TRY
-    BEGIN CATCH
-        DECLARE @ErrorMessage NVARCHAR(MAX) = ERROR_MESSAGE();
-        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
-        DECLARE @ErrorState INT = ERROR_STATE();
-        RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);
-    END CATCH
-END
-GO
-
 CREATE PROCEDURE Monitoring.SP_PullTargetFailedJobsAlerts
 AS
 BEGIN
@@ -190,16 +172,15 @@ BEGIN
         BEGIN TRY
             SET @RunOnTargetQuery =
                 N'SET NOCOUNT ON; '
-              + N'EXEC dba_db.Monitoring.SP_MonitoringJobs; '
-              + N'EXEC dba_db.Monitoring.SP_PushFailedJobsAlertsToCentral @CentralEndpoint = N'''
-              + REPLACE(@CentralEndpoint, N'''', N'''''') + N''';';
+              + N'EXEC dba_db.Monitoring.SP_CollectJobs; '
+              + N'EXEC dba_db.Monitoring.SP_RefreshFailedJobsAlerts;';
 
             SET @SqlcmdCommand =
                 N'sqlcmd -S "' + REPLACE(@TargetServer, N'"', N'""')
               + N'" -d DBA_DB -E -N -C -b -Q "' + REPLACE(@RunOnTargetQuery, N'"', N'\"') + N'"';
 
             INSERT INTO Monitoring.TargetPullLog (RunID, TargetServer, Stage, IsSuccess, Message, CommandText)
-            VALUES (@RunID, @TargetServer, N'COMMAND', 1, N'Executing target collection and push.', @SqlcmdCommand);
+            VALUES (@RunID, @TargetServer, N'COMMAND', 1, N'Executing target collection and refresh.', @SqlcmdCommand);
 
             DELETE FROM @Output;
 
@@ -253,4 +234,4 @@ BEGIN
 END
 GO
 
-PRINT 'Stored procedures created on central server: Monitoring.SP_CollectJobs, Monitoring.SP_RefreshFailedJobsAlerts, Monitoring.SP_MonitoringJobs, Monitoring.SP_PullTargetFailedJobsAlerts.';
+PRINT 'Stored procedures created on central server: Monitoring.SP_CollectJobs, Monitoring.SP_RefreshFailedJobsAlerts, Monitoring.SP_PullTargetFailedJobsAlerts.';
