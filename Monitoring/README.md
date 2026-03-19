@@ -16,7 +16,8 @@ A comprehensive T-SQL solution to monitor SQL Server Agent jobs from a central s
   2) refresh central `Monitoring.FailedJobsAlerts`
   3) loop all active targets and pull/persist target alerts into central table via `sqlcmd`
   4) send operator notification email
-- orchestrates target collection via `sqlcmd` only (no linked servers)
+- orchestrates target pull via `sqlcmd` only (no linked servers)
+- imports target `Monitoring.FailedJobsAlerts` as JSON snapshot and merges by incident key (`ServerName + JobName + FirstFailureTime`) to preserve history
 - executes `Monitoring.SP_SendAlerts` on central aggregated data and sends emails
 
 On each **Target Server**:
@@ -35,7 +36,7 @@ The **Central Server** also has all of the above objects and runs the orchestrat
 - **setup/central/** - Central server setup (DBMGMT.cubecloud.local\SQL01,10010):
   - `01_create_schema.sql` – creates `Monitoring` schema/tables including `Monitoring.TargetPullLog`, final `Monitoring.Servers` layout, and central row
   - `02_create_stored_procedure.sql` – defines `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts`, `Monitoring.SP_PullTargetFailedJobsAlerts`
-  - `03_create_send_alerts_procedure.sql` – defines `Monitoring.SP_SendAlerts`
+  - `03_create_send_alerts_procedure.sql` – defines `Monitoring.SP_SendAlerts` (one email per failed alert row)
   - `04_create_agent_job.sql` – creates **DBA - Monitoring Jobs** (runs at **:01** every hour):
     - Step 1: Collect Current Jobs → calls `Monitoring.SP_CollectJobs`
     - Step 2: Refresh Failed Alerts → calls `Monitoring.SP_RefreshFailedJobsAlerts`
@@ -115,7 +116,14 @@ Operator notifications are also configured by setup job scripts:
 - Operator name: `Monitoring`
 - Operator email: `559c4de8.cube.global@emea.teams.ms`
 - SQL Agent jobs are created with `@notify_level_email = 2` (notify on job failure)
-- This means you receive alerts from both the stored procedure and failed job events
+- You receive: (1) per-failed-job emails from `SP_SendAlerts`; (2) optional SQL Agent job-failure notifications
+
+### Email Alert Format
+
+- Subject format: `Failed Job on <ServerName> Job: <JobName>`
+- Delivery mode: one email per unresolved failed-alert row that passes resend window
+- Body format: HTML (`Server` and `Job` are bold)
+- Resend window: alert row is re-sent only if `AlertSentTime` is null or older than 50 minutes
 
 ### Target Servers (All Others)
 
@@ -291,10 +299,3 @@ Contact the DBA team for assistance with setup or issues.
 
 - Verify mail profile and credentials
 - Ensure Database Mail XPs is enabled
-
-### Statuses not updating
-- Check that the SQL Server Agent jobs are running
-- Verify access permissions on target servers
-- Review the Agent job history logs
-
-(*The above support steps also apply to non‑central servers.*)

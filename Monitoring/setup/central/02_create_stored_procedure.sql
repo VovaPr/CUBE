@@ -171,7 +171,9 @@ BEGIN
     WHILE @@FETCH_STATUS = 0
     BEGIN
         BEGIN TRY
-                        SET @RunOnTargetQuery =
+            -- Pull-only model: target job maintains FailedJobsAlerts locally.
+            -- Central reads a JSON snapshot and merges it into central table.
+            SET @RunOnTargetQuery =
                                 N'SET NOCOUNT ON; '
                             + N'PRINT N''__JSON_BEGIN__''; '
                             + N'SELECT '
@@ -226,6 +228,8 @@ BEGIN
 
                 IF ISJSON(@TargetJson) = 1
                 BEGIN
+                    -- Keep history by merging by incident identity
+                    -- (ServerName + JobName + FirstFailureTime), not just job name.
                     MERGE Monitoring.FailedJobsAlerts AS dst
                     USING (
                         SELECT
