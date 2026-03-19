@@ -74,9 +74,9 @@ DECLARE @CentralMergeQuery NVARCHAR(MAX) =
   + N'WHEN NOT MATCHED THEN INSERT (ServerName, CentralServerName, IsActive, Central, Target) VALUES (src.ServerName, src.CentralServerName, src.IsActive, src.Central, src.Target); '
   + N'SELECT * FROM Monitoring.Servers WHERE ServerName = N''' + REPLACE(@TargetInstanceName, N'''', N'''''') + N''';';
 
-DECLARE @RunOnTargetCommand NVARCHAR(MAX) =
-    N'sqlcmd -S ' + @CentralEndpoint
-  + N' -d DBA_DB -E -N -C -b -Q "' + REPLACE(@CentralMergeQuery, N'"', N'\"') + N'"';
+DECLARE @RunOnTargetCommand VARCHAR(MAX) =
+    'sqlcmd -S ' + CAST(@CentralEndpoint AS VARCHAR(256))
+  + ' -d DBA_DB -E -N -C -b -Q "' + REPLACE(CAST(@CentralMergeQuery AS VARCHAR(MAX)), '"', '\"') + '"';
 
 SELECT
     N'Run on TARGET' AS Info,
