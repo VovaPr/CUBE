@@ -52,11 +52,13 @@ GO
 IF OBJECT_ID('Monitoring.Servers', 'U') IS NULL
 BEGIN
     CREATE TABLE Monitoring.Servers (
-        ServerName NVARCHAR(256) NOT NULL PRIMARY KEY,
+        ServerName        NVARCHAR(256) NOT NULL PRIMARY KEY,
         CentralServerName NVARCHAR(256) NOT NULL,
-        IsActive BIT NOT NULL CONSTRAINT DF_Servers_IsActive DEFAULT (1),
-        CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
-        ModifiedAt DATETIME2 NOT NULL DEFAULT GETDATE()
+        IsActive          BIT NOT NULL CONSTRAINT DF_Servers_IsActive DEFAULT (1),
+        Central           BIT NULL,
+        Target            BIT NULL,
+        CreatedAt         DATETIME2 NOT NULL DEFAULT GETDATE(),
+        ModifiedAt        DATETIME2 NOT NULL DEFAULT GETDATE()
     );
 END
 
