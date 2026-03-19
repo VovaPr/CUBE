@@ -100,37 +100,23 @@ BEGIN
 END
 GO
 
--- Create target monitoring job with 3 steps
+-- Create target monitoring job with 1 step
 EXEC sp_add_job
     @job_name = 'DBA - Monitoring Jobs',
     @enabled = 1,
-    @description = 'Target server monitoring: collect local job statuses, refresh alerts, push changes to central.',
+    @description = 'Target server monitoring: collect local job statuses and track failures.',
     @owner_login_name = 'sa',
     @notify_level_email = 2,
     @notify_email_operator_name = N'Monitoring';
 GO
 
--- Step 1: Collect Jobs
+-- Step 1: Collect and Analyze
 EXEC sp_add_jobstep
     @job_name = 'DBA - Monitoring Jobs',
-    @step_name = 'Collect Jobs',
+    @step_name = 'Collect and Analyze Jobs',
     @step_id = 1,
     @subsystem = 'TSQL',
-    @command = 'EXEC dba_db.Monitoring.SP_CollectJobs',
-    @database_name = 'dba_db',
-    @retry_attempts = 3,
-    @retry_interval = 1,
-    @on_success_action = 3,
-    @on_fail_action = 2;
-GO
-
--- Step 2: Refresh Failed Alerts
-EXEC sp_add_jobstep
-    @job_name = 'DBA - Monitoring Jobs',
-    @step_name = 'Refresh Failed Alerts',
-    @step_id = 2,
-    @subsystem = 'TSQL',
-    @command = 'EXEC dba_db.Monitoring.SP_RefreshFailedJobsAlerts',
+    @command = 'EXEC dba_db.Monitoring.SP_MonitoringJobs',
     @database_name = 'dba_db',
     @retry_attempts = 3,
     @retry_interval = 1,

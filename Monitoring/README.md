@@ -21,10 +21,9 @@ A comprehensive T-SQL solution to monitor SQL Server Agent jobs from a central s
 
 On each **Target Server**:
 - `Monitoring.Jobs` table stores the latest job status for that server
-- `Monitoring.SP_MonitoringJobs` procedure is deployed locally to collect statuses and populate alerts
-- a local SQL Agent job `DBA - Monitoring Jobs` (every 30 minutes) executes 2 steps:
-  1) collect current local jobs into `Monitoring.Jobs`
-  2) refresh local `Monitoring.FailedJobsAlerts`
+- `Monitoring.SP_MonitoringJobs` procedure collects job statuses and analyzes failures
+- a local SQL Agent job `DBA - Monitoring Jobs` (every 30 minutes, 1 step):
+  1) calls `Monitoring.SP_MonitoringJobs` to collect and analyze
 
 The **Central Server** also has all of the above objects and runs the orchestration job.
 
@@ -47,11 +46,11 @@ The **Central Server** also has all of the above objects and runs the orchestrat
   - `03_rollback_stored_procedure.sql` – drops `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts`, `Monitoring.SP_MonitoringJobs`, `Monitoring.SP_PullTargetFailedJobsAlerts`
   - `04_rollback_schema.sql` – drops monitoring tables and schema
 
-- **setup/target/** – Target server setup (all monitored servers):
   - `01_create_schema.sql` – creates `Monitoring` schema and tables, including the final `Monitoring.Servers` layout and initial central/target rows
   - `02_create_servers_table.sql` – recreates `Monitoring.Servers` with the final layout and re-seeds central/target rows
   - `03_create_stored_procedure.sql` – defines `Monitoring.SP_MonitoringJobs` (collects local jobs and tracks failures)
   - `04_create_agent_job.sql` – creates **DBA - Monitoring Alerts** job (every hour at **:01**)
+  - Step 1: Collect and Analyze Jobs → calls `Monitoring.SP_MonitoringJobs`
   - `05_link_central_and_target.sql` – utility script that rebuilds local `Monitoring.Servers` rows and can execute target-to-central registration immediately
   - target setup uses `DBMGMT\SQL01,10010` as `CentralServerName`
 
