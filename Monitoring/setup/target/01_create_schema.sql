@@ -58,44 +58,33 @@ BEGIN
 END
 GO
 
--- One aggregated server table updated locally on every target run and pushed to central.
-IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Servers' AND schema_id = SCHEMA_ID('Monitoring'))
-BEGIN
-    CREATE TABLE Monitoring.Servers (
-        ServerName NVARCHAR(256) NOT NULL PRIMARY KEY,
-        CentralServerName NVARCHAR(256) NOT NULL,
-        IsActive BIT NOT NULL CONSTRAINT DF_Servers_IsActive DEFAULT (1),
-        CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
-        ModifiedAt DATETIME2 NOT NULL DEFAULT GETDATE()
-    );
-    PRINT 'Table Monitoring.Servers created.';
-END
-ELSE
-BEGIN
-    PRINT 'Table Monitoring.Servers already exists.';
-END
+-- Recreate aggregated server table with the final schema and seed local rows.
+DECLARE @TargetInstanceName NVARCHAR(256) =
+    CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
+    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'');
+DECLARE @CentralEndpoint NVARCHAR(256) = N'DBMGMT\SQL01,10010';
 
-IF NOT EXISTS (
-    SELECT 1
-    FROM Monitoring.Servers
-    WHERE ServerName = @@SERVERNAME
-)
-BEGIN
-    INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive)
-    VALUES (@@SERVERNAME, N'DBMGMT.cubecloud.local\SQL01,10010', 1);
+IF OBJECT_ID('Monitoring.Servers', 'U') IS NOT NULL
+    DROP TABLE Monitoring.Servers;
 
-    PRINT 'Server registration row added for ' + @@SERVERNAME;
-END
-ELSE
-BEGIN
-    UPDATE Monitoring.Servers
-    SET CentralServerName = N'DBMGMT.cubecloud.local\SQL01,10010',
-        IsActive = 1,
-        ModifiedAt = GETDATE()
-    WHERE ServerName = @@SERVERNAME;
+CREATE TABLE Monitoring.Servers (
+    ServerName        NVARCHAR(256) NOT NULL PRIMARY KEY,
+    CentralServerName NVARCHAR(256) NOT NULL,
+    IsActive          BIT           NOT NULL CONSTRAINT DF_Servers_IsActive DEFAULT (1),
+    Central           BIT           NULL,
+    Target            BIT           NULL,
+    CreatedAt         DATETIME2     NOT NULL DEFAULT GETDATE(),
+    ModifiedAt        DATETIME2     NOT NULL DEFAULT GETDATE()
+);
+PRINT 'Table Monitoring.Servers recreated.';
 
-    PRINT 'Server registration row updated for ' + @@SERVERNAME;
-END
+INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive, Central, Target)
+VALUES (@CentralEndpoint, @CentralEndpoint, 1, 1, 0);
+
+INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive, Central, Target)
+VALUES (@TargetInstanceName, @CentralEndpoint, 1, 0, 1);
+
+PRINT 'Server registration rows added for ' + @CentralEndpoint + ' and ' + @TargetInstanceName;
 GO
 
 -- Create indexes

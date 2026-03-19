@@ -1,4 +1,4 @@
--- Central Utility Script - Step 90
+-- Central Utility Script - Step 5
 -- Purpose:
 -- Grant required access in DBA_DB to SQL Server and SQL Agent service logins
 -- detected on central server.

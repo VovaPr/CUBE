@@ -29,12 +29,13 @@ already-centralized alerts and dispatches emails.
 ## Project Structure
 
 - **setup/central/** - Central server setup (DBMGMT.cubecloud.local\SQL01,10010):
-  - `01_create_schema.sql` – creates `Monitoring` schema and tables
+  - `01_create_schema.sql` – creates `Monitoring` schema and tables, including the final `Monitoring.Servers` layout and central row
   - `02_create_stored_procedure.sql` – defines `Monitoring.SP_MonitoringJobs`
   - `03_create_send_alerts_procedure.sql` – defines `Monitoring.SP_SendAlerts`
   - `04_create_agent_job.sql` – creates two jobs:
     - **DBA - Collect Job Status** — runs at **:01** every hour
     - **DBA - Common Monitoring Alerts** — runs at **:05** every hour and sends email from central table
+  - `05_prepare_target_grants.sql` – grants required access and prints target-side utility SQL
 
 - **setup/central/rollback/** – Central rollback scripts:
   - `01_rollback_agent_job.sql` – removes central jobs and operator
@@ -43,11 +44,11 @@ already-centralized alerts and dispatches emails.
   - `04_rollback_schema.sql` – drops monitoring tables and schema
 
 - **setup/target/** – Target server setup (all monitored servers):
-  - `01_create_schema.sql` – creates `Monitoring` schema and tables
-  - `02_create_servers_table.sql` – creates/repairs `Monitoring.Servers` and target registration row
+  - `01_create_schema.sql` – creates `Monitoring` schema and tables, including the final `Monitoring.Servers` layout and initial central/target rows
+  - `02_create_servers_table.sql` – recreates `Monitoring.Servers` with the final layout and re-seeds central/target rows
   - `03_create_stored_procedure.sql` – defines `Monitoring.SP_MonitoringJobs` (collect + fill alerts + auto-resolve)
   - `04_create_agent_job.sql` – creates **DBA - Monitoring Alerts** job (every hour at **:01**)
-  - target setup also creates `Monitoring.Servers` with `DBMGMT.cubecloud.local\SQL01,10010`
+  - target setup uses `DBMGMT\SQL01,10010` as `CentralServerName`
 
 - **setup/target/rollback/** – Target rollback scripts:
   - `01_rollback_agent_job.sql` – removes target job and operator
@@ -79,6 +80,10 @@ USE master; GO
 -- 4. Create Agent job (runs every 5 minutes)
 USE master; GO
 :r "setup\central\04_create_agent_job.sql"
+
+-- 5. Prepare grants for target execution
+USE master; GO
+:r "setup\central\05_prepare_target_grants.sql"
 ```
 
 Then configure Database Mail and email recipient:
@@ -112,7 +117,7 @@ Run the setup scripts **in order** on each target server:
 USE master; GO
 :r "setup\target\01_create_schema.sql"
 
--- 2. Ensure Monitoring.Servers exists and target row is registered
+-- 2. Recreate Monitoring.Servers with final schema and seed central/target rows
 USE master; GO
 :r "setup\target\02_create_servers_table.sql"
 
@@ -128,13 +133,13 @@ USE master; GO
 ### Target Push Prerequisite: One Aggregated Server Table
 
 Each target server stores its own registration/heartbeat row in
-`dba_db.Monitoring.Servers` (created by `setup/target/02_create_servers_table.sql`).
+`dba_db.Monitoring.Servers` (created by `setup/target/01_create_schema.sql` and refreshable via `setup/target/02_create_servers_table.sql`).
 `Monitoring.SP_MonitoringJobs` refreshes `ModifiedAt` on each run.
 
 ```sql
 USE dba_db;
 GO
-SELECT ServerName, CentralServerName, IsActive, CreatedAt, ModifiedAt
+SELECT ServerName, CentralServerName, IsActive, Central, Target, CreatedAt, ModifiedAt
 FROM Monitoring.Servers;
 GO
 ```
@@ -142,18 +147,26 @@ GO
 If you need to re-register a target row manually, use:
 
 ```sql
+DECLARE @TargetInstanceName NVARCHAR(256) =
+    CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
+    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'');
+
 MERGE Monitoring.Servers AS dst
-USING (SELECT CAST(@@SERVERNAME AS NVARCHAR(256)) AS ServerName) AS src
+USING (SELECT @TargetInstanceName AS ServerName) AS src
   ON dst.ServerName = src.ServerName
 WHEN MATCHED THEN
   UPDATE SET
-    CentralServerName = N'DBMGMT.cubecloud.local\SQL01,10010',
+    CentralServerName = N'DBMGMT\SQL01,10010',
     IsActive = 1,
+    Central = 0,
+    Target = 1,
     ModifiedAt = GETDATE()
 WHEN NOT MATCHED THEN
-  INSERT (ServerName, CentralServerName, IsActive)
-  VALUES (src.ServerName, N'DBMGMT.cubecloud.local\SQL01,10010', 1);
+  INSERT (ServerName, CentralServerName, IsActive, Central, Target)
+  VALUES (src.ServerName, N'DBMGMT\SQL01,10010', 1, 0, 1);
 ```
+
+There is no dedicated rollback step for `05_prepare_target_grants.sql` because it is a utility/security step rather than a `Monitoring` schema object deployment. Use normal security rollback procedures if those grants must be reverted.
 
 ## Monitoring Tables
 

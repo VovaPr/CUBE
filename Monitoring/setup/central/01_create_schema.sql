@@ -48,33 +48,27 @@ BEGIN
 END
 GO
 
--- Aggregated server state/registration table used by push workflows.
-IF OBJECT_ID('Monitoring.Servers', 'U') IS NULL
-BEGIN
-    CREATE TABLE Monitoring.Servers (
-        ServerName        NVARCHAR(256) NOT NULL PRIMARY KEY,
-        CentralServerName NVARCHAR(256) NOT NULL,
-        IsActive          BIT           NOT NULL CONSTRAINT DF_Servers_IsActive DEFAULT (1),
-        Central           BIT           NULL,
-        Target            BIT           NULL,
-        CreatedAt         DATETIME2     NOT NULL DEFAULT GETDATE(),
-        ModifiedAt        DATETIME2     NOT NULL DEFAULT GETDATE()
-    );
-END
+-- Recreate aggregated server state/registration table with the final schema.
+DECLARE @CentralInstanceName NVARCHAR(256) =
+    CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
+    ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'');
+DECLARE @CentralEndpoint NVARCHAR(256) = N'DBMGMT\SQL01,10010';
 
-IF NOT EXISTS (SELECT 1 FROM Monitoring.Servers WHERE ServerName = @@SERVERNAME)
-BEGIN
-    INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive)
-    VALUES (@@SERVERNAME, N'DBMGMT.cubecloud.local\SQL01,10010', 1);
-END
-ELSE
-BEGIN
-    UPDATE Monitoring.Servers
-    SET CentralServerName = N'DBMGMT.cubecloud.local\SQL01,10010',
-        IsActive = 1,
-        ModifiedAt = GETDATE()
-    WHERE ServerName = @@SERVERNAME;
-END
+IF OBJECT_ID('Monitoring.Servers', 'U') IS NOT NULL
+    DROP TABLE Monitoring.Servers;
+
+CREATE TABLE Monitoring.Servers (
+    ServerName        NVARCHAR(256) NOT NULL PRIMARY KEY,
+    CentralServerName NVARCHAR(256) NOT NULL,
+    IsActive          BIT           NOT NULL CONSTRAINT DF_Servers_IsActive DEFAULT (1),
+    Central           BIT           NULL,
+    Target            BIT           NULL,
+    CreatedAt         DATETIME2     NOT NULL DEFAULT GETDATE(),
+    ModifiedAt        DATETIME2     NOT NULL DEFAULT GETDATE()
+);
+
+INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive, Central, Target)
+VALUES (@CentralInstanceName, @CentralEndpoint, 1, 1, 0);
 GO
 
 -- Create indexes
