@@ -21,9 +21,12 @@ A comprehensive T-SQL solution to monitor SQL Server Agent jobs from a central s
 
 On each **Target Server**:
 - `Monitoring.Jobs` table stores the latest job status for that server
-- `Monitoring.SP_MonitoringJobs` procedure collects job statuses and analyzes failures
-- a local SQL Agent job `DBA - Monitoring Jobs` (every 30 minutes, 1 step):
-  1) calls `Monitoring.SP_MonitoringJobs` to collect and analyze
+- two procedures are deployed locally:
+  1) `Monitoring.SP_CollectJobs`
+  2) `Monitoring.SP_RefreshFailedJobsAlerts`
+- a local SQL Agent job `DBA - Monitoring Jobs` (every 30 minutes, 2 steps):
+  1) calls `Monitoring.SP_CollectJobs`
+  2) calls `Monitoring.SP_RefreshFailedJobsAlerts`
 
 The **Central Server** also has all of the above objects and runs the orchestration job.
 
@@ -31,7 +34,7 @@ The **Central Server** also has all of the above objects and runs the orchestrat
 
 - **setup/central/** - Central server setup (DBMGMT.cubecloud.local\SQL01,10010):
   - `01_create_schema.sql` – creates `Monitoring` schema/tables including `Monitoring.TargetPullLog`, final `Monitoring.Servers` layout, and central row
-  - `02_create_stored_procedure.sql` – defines `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts`, `Monitoring.SP_MonitoringJobs`, `Monitoring.SP_PullTargetFailedJobsAlerts`
+  - `02_create_stored_procedure.sql` – defines `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts`, `Monitoring.SP_PullTargetFailedJobsAlerts`
   - `03_create_send_alerts_procedure.sql` – defines `Monitoring.SP_SendAlerts`
   - `04_create_agent_job.sql` – creates **DBA - Monitoring Jobs** (runs at **:01** every hour):
     - Step 1: Collect Current Jobs → calls `Monitoring.SP_CollectJobs`
@@ -43,20 +46,22 @@ The **Central Server** also has all of the above objects and runs the orchestrat
 - **setup/central/rollback/** – Central rollback scripts:
   - `01_rollback_agent_job.sql` – removes central jobs and operator
   - `02_rollback_send_alerts_procedure.sql` – drops `Monitoring.SP_SendAlerts`
-  - `03_rollback_stored_procedure.sql` – drops `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts`, `Monitoring.SP_MonitoringJobs`, `Monitoring.SP_PullTargetFailedJobsAlerts`
+  - `03_rollback_stored_procedure.sql` – drops `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts`, `Monitoring.SP_PullTargetFailedJobsAlerts` (and legacy `Monitoring.SP_MonitoringJobs` if found)
   - `04_rollback_schema.sql` – drops monitoring tables and schema
 
+- **setup/target/** – Target server setup (all monitored servers):
   - `01_create_schema.sql` – creates `Monitoring` schema and tables, including the final `Monitoring.Servers` layout and initial central/target rows
   - `02_create_servers_table.sql` – recreates `Monitoring.Servers` with the final layout and re-seeds central/target rows
-  - `03_create_stored_procedure.sql` – defines `Monitoring.SP_MonitoringJobs` (collects local jobs and tracks failures)
-  - `04_create_agent_job.sql` – creates **DBA - Monitoring Alerts** job (every hour at **:01**)
-  - Step 1: Collect and Analyze Jobs → calls `Monitoring.SP_MonitoringJobs`
+  - `03_create_stored_procedure.sql` – defines `Monitoring.SP_CollectJobs` and `Monitoring.SP_RefreshFailedJobsAlerts`
+  - `04_create_agent_job.sql` – creates **DBA - Monitoring Jobs** job (every 30 minutes):
+    - Step 1: Collect Jobs → calls `Monitoring.SP_CollectJobs`
+    - Step 2: Refresh Failed Alerts → calls `Monitoring.SP_RefreshFailedJobsAlerts`
   - `05_link_central_and_target.sql` – utility script that rebuilds local `Monitoring.Servers` rows and can execute target-to-central registration immediately
   - target setup uses `DBMGMT\SQL01,10010` as `CentralServerName`
 
 - **setup/target/rollback/** – Target rollback scripts:
   - `01_rollback_agent_job.sql` – removes target job and operator
-  - `02_rollback_stored_procedure.sql` – drops `Monitoring.SP_MonitoringJobs`
+  - `02_rollback_stored_procedure.sql` – drops `Monitoring.SP_CollectJobs`, `Monitoring.SP_RefreshFailedJobsAlerts` (and legacy `Monitoring.SP_MonitoringJobs` if found)
   - `03_rollback_servers_table.sql` – drops `Monitoring.Servers` only (use for partial rollback)
   - `04_rollback_schema.sql` – drops monitoring tables and schema
 
@@ -81,7 +86,7 @@ USE master; GO
 USE master; GO
 :r "setup\central\03_create_send_alerts_procedure.sql"
 
--- 4. Create Agent jobs (hourly schedules: :01 and :05)
+-- 4. Create Agent job (hourly schedule: :01)
 USE master; GO
 :r "setup\central\04_create_agent_job.sql"
 
@@ -129,7 +134,7 @@ USE master; GO
 USE master; GO
 :r "setup\target\03_create_stored_procedure.sql"
 
--- 4. Create Agent job (runs every hour)
+-- 4. Create Agent job (runs every 30 minutes)
 USE master; GO
 :r "setup\target\04_create_agent_job.sql"
 ```
@@ -138,7 +143,7 @@ USE master; GO
 
 Each target server stores its own registration/heartbeat row in
 `dba_db.Monitoring.Servers` (created by `setup/target/01_create_schema.sql` and refreshable via `setup/target/02_create_servers_table.sql`).
-`Monitoring.SP_MonitoringJobs` refreshes `ModifiedAt` on each run.
+`Monitoring.SP_CollectJobs` refreshes `ModifiedAt` on each run.
 
 ```sql
 USE dba_db;
@@ -225,7 +230,7 @@ SELECT TOP 10 sj.name,
 FROM msdb.dbo.sysjobhistory sjh
 JOIN msdb.dbo.sysjobs sj
   ON sjh.job_id = sj.job_id
-WHERE sj.name = 'DBA - Monitoring Alerts'
+WHERE sj.name = 'DBA - Monitoring Jobs'
 ORDER BY sjh.run_date DESC;
 ```
 

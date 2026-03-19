@@ -9,7 +9,15 @@ IF OBJECT_ID('Monitoring.SP_MonitoringJobs', 'P') IS NOT NULL
     DROP PROCEDURE Monitoring.SP_MonitoringJobs;
 GO
 
-CREATE PROCEDURE Monitoring.SP_MonitoringJobs
+IF OBJECT_ID('Monitoring.SP_CollectJobs', 'P') IS NOT NULL
+    DROP PROCEDURE Monitoring.SP_CollectJobs;
+GO
+
+IF OBJECT_ID('Monitoring.SP_RefreshFailedJobsAlerts', 'P') IS NOT NULL
+    DROP PROCEDURE Monitoring.SP_RefreshFailedJobsAlerts;
+GO
+
+CREATE PROCEDURE Monitoring.SP_CollectJobs
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -114,47 +122,6 @@ BEGIN
         
         PRINT 'Job status collection completed successfully on ' + @ServerName;
         
-        -- Step 2: Check for Failed Jobs and Create/Update Alerts
-        WITH FailedJobs AS (
-            SELECT 
-                ServerName,
-                JobName,
-                COUNT(*) as FailureCount,
-                MAX(RecordedDate) as LastFailureTime
-            FROM Monitoring.Jobs
-            WHERE ServerName = @ServerName
-                AND LastRunStatus = 0
-                AND LastRunDate >= DATEADD(HOUR, -1, GETDATE())
-            GROUP BY ServerName, JobName
-        )
-        MERGE INTO Monitoring.FailedJobsAlerts fa
-        USING FailedJobs fj
-            ON fa.ServerName = fj.ServerName 
-            AND fa.JobName = fj.JobName
-            AND fa.IsResolved = 0
-        WHEN MATCHED THEN
-            UPDATE SET 
-                FailureCount = fa.FailureCount + fj.FailureCount,
-                LastFailureTime = fj.LastFailureTime
-        WHEN NOT MATCHED THEN
-            INSERT (ServerName, JobName, FailureCount, FirstFailureTime, LastFailureTime)
-            VALUES (fj.ServerName, fj.JobName, fj.FailureCount, fj.LastFailureTime, fj.LastFailureTime);
-        
-        -- Mark alerts as resolved if jobs are now running successfully
-        UPDATE Monitoring.FailedJobsAlerts
-        SET IsResolved = 1, ResolutionTime = GETDATE()
-        WHERE IsResolved = 0
-            AND ServerName = @ServerName
-            AND NOT EXISTS (
-                SELECT 1 FROM Monitoring.Jobs js
-                WHERE js.ServerName = Monitoring.FailedJobsAlerts.ServerName
-                    AND js.JobName = Monitoring.FailedJobsAlerts.JobName
-                    AND js.LastRunStatus = 0
-                    AND js.LastRunDate >= DATEADD(HOUR, -1, GETDATE())
-            );
-        
-        PRINT 'Failed job analysis completed successfully.';
-        
     END TRY
     BEGIN CATCH
         DECLARE @ErrorMessage NVARCHAR(MAX) = ERROR_MESSAGE();
@@ -162,7 +129,7 @@ BEGIN
         DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
         DECLARE @ErrorState INT = ERROR_STATE();
         
-        PRINT 'ERROR in Monitoring.SP_MonitoringJobs:';
+        PRINT 'ERROR in Monitoring.SP_CollectJobs:';
         PRINT 'Error Number: ' + CAST(@ErrorNumber AS NVARCHAR(10));
         PRINT 'Error Message: ' + @ErrorMessage;
         
@@ -171,4 +138,97 @@ BEGIN
 END
 GO
 
-PRINT 'Stored procedure Monitoring.SP_MonitoringJobs created on target server.';
+CREATE PROCEDURE Monitoring.SP_RefreshFailedJobsAlerts
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @TcpPort NVARCHAR(256);
+    DECLARE @TcpDynamicPorts NVARCHAR(256);
+    DECLARE @ResolvedPort NVARCHAR(256);
+    DECLARE @ServerName NVARCHAR(256);
+
+    EXEC master..xp_instance_regread
+        N'HKEY_LOCAL_MACHINE',
+        N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib\Tcp\IPAll',
+        N'TcpPort',
+        @TcpPort OUTPUT;
+
+    EXEC master..xp_instance_regread
+        N'HKEY_LOCAL_MACHINE',
+        N'SOFTWARE\Microsoft\MSSQLServer\MSSQLServer\SuperSocketNetLib\Tcp\IPAll',
+        N'TcpDynamicPorts',
+        @TcpDynamicPorts OUTPUT;
+
+    SET @ResolvedPort = COALESCE(
+        NULLIF(@TcpPort, N''),
+        NULLIF(@TcpDynamicPorts, N''),
+        CAST(CONNECTIONPROPERTY('local_tcp_port') AS NVARCHAR(20))
+    );
+
+    IF @ResolvedPort IS NULL
+        THROW 50001, 'Unable to resolve SQL Server TCP port for target instance.', 1;
+
+    SET @ServerName =
+        CAST(SERVERPROPERTY('MachineName') AS NVARCHAR(256)) +
+        ISNULL(N'\' + CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'') +
+        N',' + @ResolvedPort;
+
+    BEGIN TRY
+        WITH FailedJobs AS (
+            SELECT
+                ServerName,
+                JobName,
+                COUNT(*) AS FailureCount,
+                MAX(RecordedDate) AS LastFailureTime
+            FROM Monitoring.Jobs
+            WHERE ServerName = @ServerName
+              AND LastRunStatus = 0
+              AND LastRunDate >= DATEADD(HOUR, -1, GETDATE())
+            GROUP BY ServerName, JobName
+        )
+        MERGE INTO Monitoring.FailedJobsAlerts fa
+        USING FailedJobs fj
+            ON fa.ServerName = fj.ServerName
+           AND fa.JobName = fj.JobName
+           AND fa.IsResolved = 0
+        WHEN MATCHED THEN
+            UPDATE SET
+                FailureCount = fa.FailureCount + fj.FailureCount,
+                LastFailureTime = fj.LastFailureTime
+        WHEN NOT MATCHED THEN
+            INSERT (ServerName, JobName, FailureCount, FirstFailureTime, LastFailureTime)
+            VALUES (fj.ServerName, fj.JobName, fj.FailureCount, fj.LastFailureTime, fj.LastFailureTime);
+
+        UPDATE Monitoring.FailedJobsAlerts
+        SET IsResolved = 1,
+            ResolutionTime = GETDATE()
+        WHERE IsResolved = 0
+          AND ServerName = @ServerName
+          AND NOT EXISTS (
+                SELECT 1
+                FROM Monitoring.Jobs js
+                WHERE js.ServerName = Monitoring.FailedJobsAlerts.ServerName
+                  AND js.JobName = Monitoring.FailedJobsAlerts.JobName
+                  AND js.LastRunStatus = 0
+                  AND js.LastRunDate >= DATEADD(HOUR, -1, GETDATE())
+          );
+
+        PRINT 'Failed job analysis completed successfully.';
+    END TRY
+    BEGIN CATCH
+        DECLARE @ErrorMessage NVARCHAR(MAX) = ERROR_MESSAGE();
+        DECLARE @ErrorNumber INT = ERROR_NUMBER();
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
+        DECLARE @ErrorState INT = ERROR_STATE();
+
+        PRINT 'ERROR in Monitoring.SP_RefreshFailedJobsAlerts:';
+        PRINT 'Error Number: ' + CAST(@ErrorNumber AS NVARCHAR(10));
+        PRINT 'Error Message: ' + @ErrorMessage;
+
+        RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);
+    END CATCH
+END
+GO
+
+PRINT 'Stored procedures Monitoring.SP_CollectJobs and Monitoring.SP_RefreshFailedJobsAlerts created on target server.';
