@@ -1,12 +1,13 @@
 -- Utility Script - Step 91 (run on TARGET)
 -- Purpose:
 -- 1) Ensure TARGET local Monitoring.Servers row is up to date.
--- 2) Push TARGET registration to CENTRAL through xp_cmdshell + sqlcmd.
+-- 2) Send TARGET server name registration to CENTRAL (DBMGMT\SQL01,10010)
+--    through xp_cmdshell + sqlcmd.
 -- 3) Verify central row through sqlcmd (no linked servers).
 
 SET NOCOUNT ON;
 
-DECLARE @CentralEndpoint NVARCHAR(256) = N'DBMGMT.cubecloud.local\SQL01,10010';
+DECLARE @CentralEndpoint NVARCHAR(256) = N'DBMGMT\SQL01,10010';
 DECLARE @TargetServerName NVARCHAR(256) = CAST(@@SERVERNAME AS NVARCHAR(256));
 
 USE DBA_DB;
@@ -45,6 +46,7 @@ FROM Monitoring.Servers s
 WHERE s.ServerName = @TargetServerName;
 
 -- Build CENTRAL merge command to run from TARGET via sqlcmd.
+-- This sends the TARGET server name to central Monitoring.Servers.
 DECLARE @CentralMergeQuery NVARCHAR(MAX) =
     N'SET NOCOUNT ON; '
   + N'MERGE Monitoring.Servers AS dst '
