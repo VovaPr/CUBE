@@ -1,8 +1,9 @@
 -- Central Migration Script - Step 92
 -- Purpose:
 --   1. Add Central BIT and Target BIT columns to Monitoring.Servers (idempotent)
---   2. Clear all existing rows and insert a single fresh central row
---      using the server's InstanceName (detected via SERVERPROPERTY)
+--   2. Clear all existing rows and insert a single fresh central row:
+--        ServerName        = SERVERPROPERTY('InstanceName')  (dynamic, current server)
+--        CentralServerName = N'DBMGMT\SQL01,10010'           (hardcoded central endpoint)
 --   3. Set flags: Central=1, Target=0 for the central row
 --
 -- NOTE: Column references to Central/Target are wrapped in sp_executesql to
@@ -42,17 +43,18 @@ ELSE
     PRINT 'Column Target already exists, skipping.';
 GO
 
--- 3. Detect central instance name (matches logic used in steps 90/91)
-DECLARE @CentralInstanceName NVARCHAR(256) =
+-- 3. Detect instance name and set hardcoded central endpoint
+DECLARE @InstanceName     NVARCHAR(256) =
     CAST(ISNULL(CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'MSSQLSERVER') AS NVARCHAR(256));
+DECLARE @CentralEndpoint  NVARCHAR(256) = N'DBMGMT\SQL01,10010';
 
 -- 4. Clear all existing rows and insert fresh central row
 TRUNCATE TABLE Monitoring.Servers;
 PRINT 'Monitoring.Servers truncated.';
 
 INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive)
-VALUES (@CentralInstanceName, @CentralInstanceName, 1);
-PRINT 'Central row inserted: ' + @CentralInstanceName;
+VALUES (@InstanceName, @CentralEndpoint, 1);
+PRINT 'Central row inserted: ServerName=' + @InstanceName + ', CentralServerName=' + @CentralEndpoint;
 GO
 
 -- 5. Set Central/Target flags on the central row
