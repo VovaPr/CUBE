@@ -1,7 +1,7 @@
 -- Target Server Setup - Step 4
 -- Create Agent Job on each target server
--- Job: DBA - Monitoring Alerts
--- Schedule: Every 1 hour
+-- Job: DBA - Monitoring Jobs
+-- Schedule: Every 30 minutes (00, 30 of each hour)
 
 USE msdb;
 GO
@@ -38,7 +38,7 @@ BEGIN
 END
 GO
 
--- Remove legacy target-side alert sync job from older deployments
+-- Remove legacy and old job names
 IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Common Monitoring Alerts')
 BEGIN
     EXEC sp_delete_job @job_name = 'DBA - Common Monitoring Alerts', @delete_unused_schedule = 1;
@@ -63,6 +63,13 @@ BEGIN
 END
 GO
 
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Monitoring Alerts')
+BEGIN
+    EXEC sp_delete_job @job_name = 'DBA - Monitoring Alerts', @delete_unused_schedule = 1;
+END
+GO
+
+-- Cleanup orphaned schedules
 IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Common Monitoring Alerts - Hourly at :05')
 BEGIN
     EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Common Monitoring Alerts - Hourly at :05', @force_delete = 1;
@@ -87,30 +94,43 @@ BEGIN
 END
 GO
 
--- Remove existing job
-IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = 'DBA - Monitoring Alerts')
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Monitoring Alerts - Every Hour')
 BEGIN
-    EXEC sp_delete_job @job_name = 'DBA - Monitoring Alerts', @delete_unused_schedule = 1;
+    EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Monitoring Alerts - Every Hour', @force_delete = 1;
 END
 GO
 
--- Create the job
+-- Create target monitoring job with 3 steps
 EXEC sp_add_job
-    @job_name = 'DBA - Monitoring Alerts',
+    @job_name = 'DBA - Monitoring Jobs',
     @enabled = 1,
-    @description = 'Target server monitoring job; collects local job statuses and tracks failures. Runs hourly.',
+    @description = 'Target server monitoring: collect local job statuses, refresh alerts, push changes to central.',
     @owner_login_name = 'sa',
     @notify_level_email = 2,
     @notify_email_operator_name = N'Monitoring';
 GO
 
--- Step 1: Collect status and analyze alerts (only step on target servers)
+-- Step 1: Collect Jobs
 EXEC sp_add_jobstep
-    @job_name = 'DBA - Monitoring Alerts',
-    @step_name = 'Collect Job Status and Check Alerts',
+    @job_name = 'DBA - Monitoring Jobs',
+    @step_name = 'Collect Jobs',
     @step_id = 1,
     @subsystem = 'TSQL',
-    @command = 'EXEC dba_db.Monitoring.SP_MonitoringJobs',
+    @command = 'EXEC dba_db.Monitoring.SP_CollectJobs',
+    @database_name = 'dba_db',
+    @retry_attempts = 3,
+    @retry_interval = 1,
+    @on_success_action = 3,
+    @on_fail_action = 2;
+GO
+
+-- Step 2: Refresh Failed Alerts
+EXEC sp_add_jobstep
+    @job_name = 'DBA - Monitoring Jobs',
+    @step_name = 'Refresh Failed Alerts',
+    @step_id = 2,
+    @subsystem = 'TSQL',
+    @command = 'EXEC dba_db.Monitoring.SP_RefreshFailedJobsAlerts',
     @database_name = 'dba_db',
     @retry_attempts = 3,
     @retry_interval = 1,
@@ -118,37 +138,33 @@ EXEC sp_add_jobstep
     @on_fail_action = 2;
 GO
 
-IF EXISTS (
-    SELECT 1
-    FROM msdb.dbo.sysschedules
-    WHERE name = 'DBA - Monitoring Alerts - Every Hour'
-)
+-- Create schedule: every 30 minutes
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = 'DBA - Monitoring Jobs - Every 30 Minutes')
 BEGIN
-    EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Monitoring Alerts - Every Hour';
+    EXEC msdb.dbo.sp_delete_schedule @schedule_name = 'DBA - Monitoring Jobs - Every 30 Minutes', @force_delete = 1;
 END
 GO
 
--- Create schedule: every 1 hour at :01
 EXEC sp_add_schedule
-    @schedule_name = 'DBA - Monitoring Alerts - Every Hour',
+    @schedule_name = 'DBA - Monitoring Jobs - Every 30 Minutes',
     @freq_type = 4,
     @freq_interval = 1,
-    @freq_subday_type = 8,
-    @freq_subday_interval = 1,
-    @active_start_time = 000100, -- start at :01
+    @freq_subday_type = 2,
+    @freq_subday_interval = 30,
+    @active_start_time = 000000,
     @active_end_time = 235959;
 GO
 
 -- Attach schedule
 EXEC sp_attach_schedule
-    @job_name = 'DBA - Monitoring Alerts',
-    @schedule_name = 'DBA - Monitoring Alerts - Every Hour';
+    @job_name = 'DBA - Monitoring Jobs',
+    @schedule_name = 'DBA - Monitoring Jobs - Every 30 Minutes';
 GO
 
 -- Assign to local server
 EXEC sp_add_jobserver
-    @job_name = 'DBA - Monitoring Alerts',
+    @job_name = 'DBA - Monitoring Jobs',
     @server_name = N'(local)';
 GO
 
-PRINT 'Target Agent Job "DBA - Monitoring Alerts" created successfully (every hour) on ' + @@SERVERNAME;
+PRINT 'Target Agent Job "DBA - Monitoring Jobs" created successfully (every 30 minutes) on ' + @@SERVERNAME;
