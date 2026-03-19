@@ -1,5 +1,5 @@
 -- Central Server Setup - Step 2
--- Create monitoring stored procedure on INFRA-MGMT01
+-- Create monitoring stored procedure on DBMGMT.cubecloud.local\SQL01,10010
 -- This procedure collects local job statuses and can be called by central job
 -- to also invoke on target servers remotely
 

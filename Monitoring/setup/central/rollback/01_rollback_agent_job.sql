@@ -1,11 +1,11 @@
 -- Central Server Rollback - Step 4
--- Removes both central Agent jobs, their schedules, and the DEVMonitoring operator
--- from INFRA-MGMT01.
+-- Removes both central Agent jobs, their schedules, and the Monitoring operator
+-- from DBMGMT.cubecloud.local\SQL01,10010.
 --
 -- Reverses: 04_create_agent_job.sql
 --   Job 1: DBA - Collect Job Status         (schedule: DBA - Collect Job Status - Hourly at :01)
 --   Job 2: DBA - Common Monitoring Alerts   (schedule: DBA - Common Monitoring Alerts - Hourly at :05)
---   Operator: DEVMonitoring
+--   Operator: Monitoring
 
 USE msdb;
 GO
@@ -59,17 +59,17 @@ END
 GO
 
 -- ============================================================
--- Remove Operator: DEVMonitoring
+-- Remove Operator: Monitoring
 -- NOTE: Only drop if no other jobs still reference this operator.
 --       Comment out if the operator is shared with other jobs.
 -- ============================================================
-IF EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE name = N'DEVMonitoring')
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE name = N'Monitoring')
 BEGIN
-    EXEC msdb.dbo.sp_delete_operator @name = N'DEVMonitoring';
-    PRINT 'Operator DEVMonitoring deleted.';
+    EXEC msdb.dbo.sp_delete_operator @name = N'Monitoring';
+    PRINT 'Operator Monitoring deleted.';
 END
 ELSE
-    PRINT 'Operator DEVMonitoring does not exist, nothing to delete.';
+    PRINT 'Operator Monitoring does not exist, nothing to delete.';
 GO
 
 PRINT 'Central rollback step 4 complete (jobs and operator removed from ' + @@SERVERNAME + ').';

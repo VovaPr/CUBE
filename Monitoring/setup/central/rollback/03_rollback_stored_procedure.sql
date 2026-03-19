@@ -1,5 +1,5 @@
 -- Central Server Rollback - Step 2
--- Drops Monitoring.SP_MonitoringJobs from dba_db on INFRA-MGMT01
+-- Drops Monitoring.SP_MonitoringJobs from dba_db on DBMGMT.cubecloud.local\SQL01,10010
 
 USE dba_db;
 GO

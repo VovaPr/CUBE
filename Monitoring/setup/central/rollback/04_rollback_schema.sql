@@ -1,5 +1,5 @@
 -- Central Server Rollback - Step 1
--- Drops indexes, tables, and Monitoring schema from dba_db on INFRA-MGMT01
+-- Drops indexes, tables, and Monitoring schema from dba_db on DBMGMT.cubecloud.local\SQL01,10010
 -- WARNING: All monitoring data will be permanently deleted.
 
 USE dba_db;

@@ -7,10 +7,10 @@ USE msdb;
 GO
 
 -- Create or update SQL Agent operator for monitoring notifications
-IF NOT EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE name = N'DEVMonitoring')
+IF NOT EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE name = N'Monitoring')
 BEGIN
     EXEC msdb.dbo.sp_add_operator
-        @name = N'DEVMonitoring',
+        @name = N'Monitoring',
         @enabled = 1,
         @weekday_pager_start_time = 90000,
         @weekday_pager_end_time = 180000,
@@ -25,7 +25,7 @@ END
 ELSE
 BEGIN
     EXEC msdb.dbo.sp_update_operator
-        @name = N'DEVMonitoring',
+        @name = N'Monitoring',
         @enabled = 1,
         @weekday_pager_start_time = 90000,
         @weekday_pager_end_time = 180000,
@@ -52,7 +52,7 @@ EXEC sp_add_job
     @description = 'Target server monitoring job; collects local job statuses and tracks failures. Runs hourly.',
     @owner_login_name = 'sa',
     @notify_level_email = 2,
-    @notify_email_operator_name = N'DEVMonitoring';
+    @notify_email_operator_name = N'Monitoring';
 GO
 
 -- Step 1: Collect status and analyze alerts (only step on target servers)

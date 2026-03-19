@@ -82,14 +82,14 @@ IF NOT EXISTS (
 )
 BEGIN
     INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive)
-    VALUES (@@SERVERNAME, N'INFRA-MGMT01.cubecloud.local', 1);
+    VALUES (@@SERVERNAME, N'DBMGMT.cubecloud.local\SQL01,10010', 1);
 
     PRINT 'Server registration row added for ' + @@SERVERNAME;
 END
 ELSE
 BEGIN
     UPDATE Monitoring.Servers
-    SET CentralServerName = N'INFRA-MGMT01.cubecloud.local',
+    SET CentralServerName = N'DBMGMT.cubecloud.local\SQL01,10010',
         IsActive = 1,
         ModifiedAt = GETDATE()
     WHERE ServerName = @@SERVERNAME;

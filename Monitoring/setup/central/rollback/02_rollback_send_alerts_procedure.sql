@@ -1,5 +1,5 @@
 -- Central Server Rollback - Step 3
--- Drops Monitoring.SP_SendAlerts from dba_db on INFRA-MGMT01
+-- Drops Monitoring.SP_SendAlerts from dba_db on DBMGMT.cubecloud.local\SQL01,10010
 
 USE dba_db;
 GO

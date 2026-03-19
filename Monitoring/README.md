@@ -10,7 +10,7 @@ A comprehensive T-SQL solution to monitor SQL Server Agent jobs from a central s
 
 ## Architecture
 
-**Central Monitoring Server – `INFRA-MGMT01` (origin\Master)**
+**Central Monitoring Server - `DBMGMT.cubecloud.local\SQL01,10010` (origin\Master)**
 - runs the SQL Agent job **DBA - Common Monitoring Alerts** every 5 minutes
 - receives alert data pushed from target servers into central `dba_db`
 - executes `Monitoring.SP_SendAlerts` on central data and sends emails
@@ -28,7 +28,7 @@ already-centralized alerts and dispatches emails.
 
 ## Project Structure
 
-- **setup/central/** – Central server setup (INFRA-MGMT01):
+- **setup/central/** - Central server setup (DBMGMT.cubecloud.local\SQL01,10010):
   - `01_create_schema.sql` – creates `Monitoring` schema and tables
   - `02_create_stored_procedure.sql` – defines `Monitoring.SP_MonitoringJobs`
   - `03_create_send_alerts_procedure.sql` – defines `Monitoring.SP_SendAlerts`
@@ -46,15 +46,15 @@ already-centralized alerts and dispatches emails.
   - `01_create_schema.sql` – creates `Monitoring` schema and tables
   - `02_create_stored_procedure.sql` – defines `Monitoring.SP_MonitoringJobs` (collect + fill alerts + auto-resolve)
   - `03_create_agent_job.sql` – creates **DBA - Monitoring Alerts** job (every hour at **:01**)
-  - target setup also creates `Monitoring.Servers` with `INFRA-MGMT01.cubecloud.local`
+  - target setup also creates `Monitoring.Servers` with `DBMGMT.cubecloud.local\SQL01,10010`
 
 - **Monitoring/** – miscellaneous utilities
 
 ## Installation
 
-### Central Server (INFRA-MGMT01)
+### Central Server (DBMGMT.cubecloud.local\SQL01,10010)
 
-Run the setup scripts **in order** on `INFRA-MGMT01`:
+Run the setup scripts **in order** on `DBMGMT.cubecloud.local\SQL01,10010`:
 
 ```sql
 -- 1. Create schema and tables
@@ -91,7 +91,7 @@ ALTER PROCEDURE Monitoring.SP_SendAlerts
 
 Operator notifications are also configured by setup job scripts:
 
-- Operator name: `DEVMonitoring`
+- Operator name: `Monitoring`
 - Operator email: `559c4de8.cube.global@emea.teams.ms`
 - SQL Agent jobs are created with `@notify_level_email = 2` (notify on job failure)
 - This means you receive alerts from both the stored procedure and failed job events
@@ -136,12 +136,12 @@ USING (SELECT CAST(@@SERVERNAME AS NVARCHAR(256)) AS ServerName) AS src
   ON dst.ServerName = src.ServerName
 WHEN MATCHED THEN
   UPDATE SET
-    CentralServerName = N'INFRA-MGMT01.cubecloud.local',
+    CentralServerName = N'DBMGMT.cubecloud.local\SQL01,10010',
     IsActive = 1,
     ModifiedAt = GETDATE()
 WHEN NOT MATCHED THEN
   INSERT (ServerName, CentralServerName, IsActive)
-  VALUES (src.ServerName, N'INFRA-MGMT01.cubecloud.local', 1);
+  VALUES (src.ServerName, N'DBMGMT.cubecloud.local\SQL01,10010', 1);
 ```
 
 ## Monitoring Tables

@@ -1,9 +1,8 @@
 -- Central Server Setup - Step 3
--- Create alert sending procedure on INFRA-MGMT01
+-- Create alert sending procedure on DBMGMT.cubecloud.local\SQL01,10010
 
 USE dba_db;
 GO
-
 IF OBJECT_ID('Monitoring.SP_SendAlerts', 'P') IS NOT NULL
     DROP PROCEDURE Monitoring.SP_SendAlerts;
 GO

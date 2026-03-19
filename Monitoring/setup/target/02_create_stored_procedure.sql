@@ -22,7 +22,7 @@ BEGIN
         USING (
             SELECT
                 CAST(@ServerName AS NVARCHAR(256)) AS ServerName,
-                CAST(N'INFRA-MGMT01.cubecloud.local' AS NVARCHAR(256)) AS CentralServerName,
+                CAST(N'DBMGMT.cubecloud.local\SQL01,10010' AS NVARCHAR(256)) AS CentralServerName,
                 CAST(1 AS BIT) AS IsActive
         ) AS src
             ON s.ServerName = src.ServerName

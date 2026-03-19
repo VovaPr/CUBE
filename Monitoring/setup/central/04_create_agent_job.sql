@@ -1,7 +1,7 @@
 -- Central Server Setup - Step 4
--- Create Agent Jobs on INFRA-MGMT01
--- Job 1: DBA - Collect Job Status       → runs at :01 every hour
--- Job 2: DBA - Common Monitoring Alerts → runs at :05 every hour
+-- Create Agent Jobs on DBMGMT.cubecloud.local\SQL01,10010
+-- Job 1: DBA - Collect Job Status       -> runs at :01 every hour
+-- Job 2: DBA - Common Monitoring Alerts -> runs at :05 every hour
 --
 -- Separation ensures data is collected (4 min window) before alerts fire.
 
@@ -11,10 +11,10 @@ GO
 -- ============================================================
 -- Operator
 -- ============================================================
-IF NOT EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE name = N'DEVMonitoring')
+IF NOT EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE name = N'Monitoring')
 BEGIN
     EXEC msdb.dbo.sp_add_operator
-        @name = N'DEVMonitoring',
+        @name = N'Monitoring',
         @enabled = 1,
         @weekday_pager_start_time = 90000,
         @weekday_pager_end_time = 180000,
@@ -29,7 +29,7 @@ END
 ELSE
 BEGIN
     EXEC msdb.dbo.sp_update_operator
-        @name = N'DEVMonitoring',
+        @name = N'Monitoring',
         @enabled = 1,
         @weekday_pager_start_time = 90000,
         @weekday_pager_end_time = 180000,
@@ -55,7 +55,7 @@ EXEC sp_add_job
     @description = 'Collects local job statuses into Monitoring.Jobs and updates FailedJobsAlerts. Runs at :01 every hour.',
     @owner_login_name = 'sa',
     @notify_level_email = 2,
-    @notify_email_operator_name = N'DEVMonitoring';
+    @notify_email_operator_name = N'Monitoring';
 GO
 
 EXEC sp_add_jobstep
@@ -108,7 +108,7 @@ EXEC sp_add_job
     @description = 'Sends email notifications for unresolved alerts already pushed into central tables. Runs at :05 every hour.',
     @owner_login_name = 'sa',
     @notify_level_email = 2,
-    @notify_email_operator_name = N'DEVMonitoring';
+    @notify_email_operator_name = N'Monitoring';
 GO
 
 EXEC sp_add_jobstep

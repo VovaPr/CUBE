@@ -1,5 +1,5 @@
 -- Central Server Setup - Step 1
--- Create monitoring schema and tables on INFRA-MGMT01
+-- Create monitoring schema and tables on DBMGMT.cubecloud.local\SQL01,10010
 -- The dba_db database must already exist
 
 USE dba_db;
@@ -60,18 +60,18 @@ BEGIN
     );
 END
 
-IF NOT EXISTS (SELECT 1 FROM Monitoring.Servers WHERE ServerName = N'INFRA-MGMT01')
+IF NOT EXISTS (SELECT 1 FROM Monitoring.Servers WHERE ServerName = @@SERVERNAME)
 BEGIN
     INSERT INTO Monitoring.Servers (ServerName, CentralServerName, IsActive)
-    VALUES (N'INFRA-MGMT01', N'INFRA-MGMT01.cubecloud.local', 1);
+    VALUES (@@SERVERNAME, N'DBMGMT.cubecloud.local\SQL01,10010', 1);
 END
 ELSE
 BEGIN
     UPDATE Monitoring.Servers
-    SET CentralServerName = N'INFRA-MGMT01.cubecloud.local',
+    SET CentralServerName = N'DBMGMT.cubecloud.local\SQL01,10010',
         IsActive = 1,
         ModifiedAt = GETDATE()
-    WHERE ServerName = N'INFRA-MGMT01';
+    WHERE ServerName = @@SERVERNAME;
 END
 GO
 
