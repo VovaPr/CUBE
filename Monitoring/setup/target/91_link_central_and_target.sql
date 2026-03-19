@@ -9,7 +9,8 @@
 SET NOCOUNT ON;
 
 DECLARE @CentralEndpoint NVARCHAR(256) = N'DBMGMT\SQL01,10010';
-DECLARE @TargetServerName NVARCHAR(256) = CAST(@@SERVERNAME AS NVARCHAR(256));
+DECLARE @TargetInstanceName NVARCHAR(256) =
+    CAST(ISNULL(CAST(SERVERPROPERTY('InstanceName') AS NVARCHAR(256)), N'MSSQLSERVER') AS NVARCHAR(256));
 
 USE DBA_DB;
 
@@ -23,7 +24,7 @@ END;
 MERGE Monitoring.Servers AS dst
 USING (
     SELECT
-        @TargetServerName AS ServerName,
+    @TargetInstanceName AS ServerName,
         @CentralEndpoint AS CentralServerName,
         CAST(1 AS BIT) AS IsActive
 ) AS src
@@ -60,11 +61,11 @@ SELECT
     s.ServerName,
     s.CentralServerName,
     CAST(CASE WHEN s.ServerName = @CentralEndpoint THEN 1 ELSE 0 END AS BIT) AS Central,
-    CAST(CASE WHEN s.ServerName = @TargetServerName THEN 1 ELSE 0 END AS BIT) AS Target,
+    CAST(CASE WHEN s.ServerName = @TargetInstanceName THEN 1 ELSE 0 END AS BIT) AS Target,
     s.IsActive,
     s.ModifiedAt
 FROM Monitoring.Servers s
-WHERE s.ServerName IN (@CentralEndpoint, @TargetServerName)
+WHERE s.ServerName IN (@CentralEndpoint, @TargetInstanceName)
 ORDER BY s.ServerName;
 
 -- Build CENTRAL merge command to run from TARGET via sqlcmd.
@@ -72,7 +73,7 @@ ORDER BY s.ServerName;
 DECLARE @CentralMergeQuery NVARCHAR(MAX) =
     N'SET NOCOUNT ON; '
   + N'MERGE Monitoring.Servers AS dst '
-  + N'USING (SELECT CAST(N''' + REPLACE(@TargetServerName, N'''', N'''''') + N''' AS NVARCHAR(256)) AS ServerName, '
+    + N'USING (SELECT CAST(N''' + REPLACE(@TargetInstanceName, N'''', N'''''') + N''' AS NVARCHAR(256)) AS ServerName, '
   + N'CAST(N''' + REPLACE(@CentralEndpoint, N'''', N'''''') + N''' AS NVARCHAR(256)) AS CentralServerName, '
   + N'CAST(1 AS BIT) AS IsActive) AS src '
   + N'ON dst.ServerName = src.ServerName '
@@ -80,9 +81,9 @@ DECLARE @CentralMergeQuery NVARCHAR(MAX) =
   + N'WHEN NOT MATCHED THEN INSERT (ServerName, CentralServerName, IsActive) VALUES (src.ServerName, src.CentralServerName, src.IsActive); '
     + N'SELECT N''Central Monitoring.Servers'' AS Info, ServerName, CentralServerName, '
     + N'CAST(CASE WHEN ServerName = N''' + REPLACE(@CentralEndpoint, N'''', N'''''') + N''' THEN 1 ELSE 0 END AS BIT) AS Central, '
-    + N'CAST(CASE WHEN ServerName = N''' + REPLACE(@TargetServerName, N'''', N'''''') + N''' THEN 1 ELSE 0 END AS BIT) AS Target, '
+        + N'CAST(CASE WHEN ServerName = N''' + REPLACE(@TargetInstanceName, N'''', N'''''') + N''' THEN 1 ELSE 0 END AS BIT) AS Target, '
     + N'IsActive, ModifiedAt '
-  + N'FROM Monitoring.Servers WHERE ServerName = N''' + REPLACE(@TargetServerName, N'''', N'''''') + N''';';
+    + N'FROM Monitoring.Servers WHERE ServerName = N''' + REPLACE(@TargetInstanceName, N'''', N'''''') + N''';';
 
 DECLARE @RunOnTargetCommand NVARCHAR(MAX) =
     N'sqlcmd -S ' + @CentralEndpoint
