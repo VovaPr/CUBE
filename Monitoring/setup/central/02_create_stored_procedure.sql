@@ -21,7 +21,13 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    DECLARE @ServerName NVARCHAR(256) = N'DBMGMT\SQL01,10010';
+    DECLARE @ServerName NVARCHAR(256);
+    SELECT TOP 1 @ServerName = ServerName
+    FROM Monitoring.Servers
+    WHERE Central = 1;
+
+    IF @ServerName IS NULL
+        THROW 50001, 'Central server entry not found in Monitoring.Servers (Central = 1).', 1;
 
     MERGE INTO Monitoring.Jobs j
     USING (
@@ -79,7 +85,13 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    DECLARE @ServerName NVARCHAR(256) = N'DBMGMT\SQL01,10010';
+    DECLARE @ServerName NVARCHAR(256);
+    SELECT TOP 1 @ServerName = ServerName
+    FROM Monitoring.Servers
+    WHERE Central = 1;
+
+    IF @ServerName IS NULL
+        THROW 50001, 'Central server entry not found in Monitoring.Servers (Central = 1).', 1;
 
     WITH FailedJobs AS (
         SELECT
@@ -131,7 +143,14 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    DECLARE @CentralEndpoint NVARCHAR(256) = N'DBMGMT\SQL01,10010';
+    DECLARE @CentralEndpoint NVARCHAR(256);
+    SELECT TOP 1 @CentralEndpoint = ServerName
+    FROM Monitoring.Servers
+    WHERE Central = 1;
+
+    IF @CentralEndpoint IS NULL
+        THROW 50001, 'Central server entry not found in Monitoring.Servers (Central = 1).', 1;
+
     DECLARE @RunID UNIQUEIDENTIFIER = NEWID();
     DECLARE @TargetServer NVARCHAR(256);
     DECLARE @RunOnTargetQuery NVARCHAR(MAX);

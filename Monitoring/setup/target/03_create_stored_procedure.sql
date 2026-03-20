@@ -54,12 +54,20 @@ BEGIN
         N',' + @ResolvedPort;
     
     BEGIN TRY
+        -- Read central server name from the seeded Monitoring.Servers row (Central = 1).
+        SELECT TOP 1 @CentralEndpoint = CentralServerName
+        FROM Monitoring.Servers
+        WHERE Central = 1;
+
+        IF @CentralEndpoint IS NULL
+            THROW 50002, 'Central server entry not found in Monitoring.Servers (Central = 1).', 1;
+
         -- Keep one aggregated server row fresh on target.
         MERGE Monitoring.Servers AS s
         USING (
             SELECT
                 CAST(@ServerName AS NVARCHAR(256)) AS ServerName,
-                CAST(N'DBMGMT\SQL01,10010' AS NVARCHAR(256)) AS CentralServerName,
+                CAST(@CentralEndpoint AS NVARCHAR(256)) AS CentralServerName,
                 CAST(1 AS BIT) AS IsActive
         ) AS src
             ON s.ServerName = src.ServerName
