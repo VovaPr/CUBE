@@ -125,7 +125,7 @@ BEGIN
 	     SET @oldDbsName = @dbsName
 	  END
 
-      SELECT TOP 1 @dbsName = [TABLE_CATALOG], @tblname = [TABLE_NAME], @tblschema = [TABLE_SCHEMA], @objectID = [objectID] FROM ##baseTableNames WHERE ID = @iLoop
+      SELECT TOP 1 @dbsName = REPLACE(REPLACE([TABLE_CATALOG], '[', ''), ']', ''), @tblname = [TABLE_NAME], @tblschema = [TABLE_SCHEMA], @objectID = [objectID] FROM ##baseTableNames WHERE ID = @iLoop
 
       SET @schemaTableName = @tblschema + '.' + @tblname
 
