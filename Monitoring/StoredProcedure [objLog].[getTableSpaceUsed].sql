@@ -151,7 +151,7 @@ BEGIN
          SET @sqlStr =
             'USE ' + QUOTENAME(@dbsName) + '; '
             + 'INSERT INTO #tableSpaceUsed( TABLE_NAME, num_rows , reserved_KB , data_KB , index_KB , unsed_KB ) '
-            + 'EXEC sp_spaceused ' + QUOTENAME(@tblschema) + '.' + QUOTENAME(@tblname) + ';';
+            + 'EXEC sp_spaceused N''' + @tblschema + '.' + @tblname + ''';';
 
          -- Execute the dynamic SQL
          EXEC(@sqlStr);
