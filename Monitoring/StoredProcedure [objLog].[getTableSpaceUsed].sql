@@ -11,22 +11,26 @@ ALTER   PROCEDURE [objLog].[getTableSpaceUsed]
    @debug BIT = 1,
    @logToTable BIT = 0
 )
-/*======================================================================================*/
-/* Date: 2026/03/23                                                                     */
-/* Version: 0.0.2                                                                       */
-/* Created By: Pardip Mudhar               Modified By: Vova P                          */
-/* Jira Ticket:                                                                         */
-/* Target Database: DBA_DA                                                              */
-/* Description:                                                                         */
 /*
-Latest changes (2026-03-23):
- - Refactored to remove EXEC('USE ...') and use fully qualified table names in dynamic SQL for cross-database operations.
- - Added validation for @dbsName before using QUOTENAME.
- - Fixed dynamic SQL syntax (removed invalid newline escape). 
- - Improved error handling and best practices for dynamic SQL execution.
+========================================================================================
+ Procedure:   [objLog].[getTableSpaceUsed]
+ Date:        2026-03-23
+ Version:     0.0.2
+ Created By:  Pardip Mudhar
+ Modified By: Vova P
+ Jira Ticket: 
+ Target DB:   DBA_DA
+---------------------------------------------------------------------------------------
+ Description:
+   Table to store table space used values and early warning system.
+
+   Latest changes (2026-03-23):
+     • Refactored to remove EXEC('USE ...') and use fully qualified table names in dynamic SQL for cross-database operations.
+     • Added validation for @dbsName before using QUOTENAME.
+     • Fixed dynamic SQL syntax (removed invalid newline escape).
+     • Improved error handling and best practices for dynamic SQL execution.
+========================================================================================
 */
-/* Table to store table space used values and early warning system                      */
-/*======================================================================================*/
 --     DROP PROCEDURE  [objLog].[getTableSpaceUsed]
 --     EXECUTE [objLog].[getTableSpaceUsed] @debug = 1, @logToTable = 1
 AS
