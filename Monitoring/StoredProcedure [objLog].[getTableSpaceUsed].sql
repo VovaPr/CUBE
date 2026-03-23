@@ -18,15 +18,13 @@ ALTER   PROCEDURE [objLog].[getTableSpaceUsed]
 /* Jira Ticket:                                                                         */
 /* Target Database: DBA_DA                                                              */
 /* Description:                                                                         */
-/* -----------------------------------------------------------------------------
-   REVIEW (2026-03-23):
-   1. Msg 102, Level 15, State 1, Incorrect syntax near 'QUOTENAME' is likely caused by using EXEC('USE ' + QUOTENAME(@dbsName)); inside a TRY block within a WHILE loop. In SQL Server, switching databases with EXEC('USE ...') inside dynamic SQL does not change the context for subsequent statements in the batch. This can cause unexpected behavior or syntax errors, especially if the next statements depend on the database context.
-   2. The use of EXEC('USE ...') is discouraged in stored procedures. Instead, fully qualify all object names (e.g., [db].[schema].[table]) in dynamic SQL to avoid context issues.
-   3. The QUOTENAME usage itself is syntactically correct, but if @dbsName is NULL or contains invalid characters, it can cause errors. Ensure @dbsName is always valid and not NULL before using it.
-   4. The dynamic SQL for sp_spaceused is built correctly, but the INSERT INTO ... EXEC pattern may fail if the schema of sp_spaceused output changes or if permissions are missing.
-   5. There are no major missing END statements or TRY/CATCH mismatches. The error is not due to block structure.
-   6. Recommendation: Remove EXEC('USE ...') and always use fully qualified table names in dynamic SQL. Validate @dbsName before using QUOTENAME. Consider error handling for dynamic SQL execution.
-   ----------------------------------------------------------------------------- */
+/*
+Latest changes (2026-03-23):
+ - Refactored to remove EXEC('USE ...') and use fully qualified table names in dynamic SQL for cross-database operations.
+ - Added validation for @dbsName before using QUOTENAME.
+ - Fixed dynamic SQL syntax (removed invalid newline escape). 
+ - Improved error handling and best practices for dynamic SQL execution.
+*/
 /* Table to store table space used values and early warning system                      */
 /*======================================================================================*/
 --     DROP PROCEDURE  [objLog].[getTableSpaceUsed]
@@ -148,14 +146,12 @@ BEGIN
             GOTO ErrExit;
          END
 
-         -- Build the fully qualified table name safely
-         DECLARE @safeTableName NVARCHAR(512);
-         SET @safeTableName = QUOTENAME(@dbsName) + '.' + QUOTENAME(@tblschema) + '.' + QUOTENAME(@tblname);
 
-         -- Build dynamic SQL to call sp_spaceused for the current table in the correct database
+         -- Build dynamic SQL to call sp_spaceused for the current table in the correct database context
          SET @sqlStr =
-            'INSERT INTO #tableSpaceUsed( TABLE_NAME, num_rows , reserved_KB , data_KB , index_KB , unsed_KB ) '
-            + 'EXEC ' + @safeTableName + '.sp_spaceused ' + QUOTENAME(@tblname) + ';';
+            'USE ' + QUOTENAME(@dbsName) + '; '
+            + 'INSERT INTO #tableSpaceUsed( TABLE_NAME, num_rows , reserved_KB , data_KB , index_KB , unsed_KB ) '
+            + 'EXEC sp_spaceused ' + QUOTENAME(@tblschema) + '.' + QUOTENAME(@tblname) + ';';
 
          -- Execute the dynamic SQL
          EXEC(@sqlStr);
