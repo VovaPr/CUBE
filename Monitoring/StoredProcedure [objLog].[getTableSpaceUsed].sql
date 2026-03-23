@@ -154,7 +154,7 @@ BEGIN
 
          -- Build dynamic SQL to call sp_spaceused for the current table in the correct database
          SET @sqlStr =
-            'INSERT INTO #tableSpaceUsed( TABLE_NAME, num_rows , reserved_KB , data_KB , index_KB , unsed_KB )\n'
+            'INSERT INTO #tableSpaceUsed( TABLE_NAME, num_rows , reserved_KB , data_KB , index_KB , unsed_KB ) '
             + 'EXEC ' + @safeTableName + '.sp_spaceused ' + QUOTENAME(@tblname) + ';';
 
          -- Execute the dynamic SQL
