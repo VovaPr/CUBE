@@ -12,10 +12,13 @@ GO
 CREATE OR ALTER PROCEDURE dbo.SP_SendSqlJobsLastRunStatusReport
     @MailProfile NVARCHAR(256) = N'SQLAlerts',
     @Recipients  NVARCHAR(MAX) = N'sqlalerts@cube.global',
-    @Subject     NVARCHAR(256) = N'CUBEPRODSQL SQL Jobs Last Run Status Report'
+    @Subject     NVARCHAR(256) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    IF @Subject IS NULL
+        SET @Subject = CAST(@@SERVERNAME AS NVARCHAR(128)) + N' SQL Jobs Last Run Status Report';
 
     DROP TABLE IF EXISTS #Result;
 
@@ -144,7 +147,7 @@ BEGIN
         FOR XML PATH('tr'), ELEMENTS
     ) AS NVARCHAR(MAX));
 
-    SET @Body = N'<html><body><H4>CUBEPRODSQL SQL Jobs Last Run Status Report</H4>' +
+    SET @Body = N'<html><body><H4>' + @Subject + N'</H4>' +
                 N'<table border = 1><tr>' +
                 N'<th> JobName </th><th> StepId </th><th> StepName </th><th> RunDateAndTime </th>' +
                 N'<th> Duration </th><th> RunStatus </th><th> Message </th><th> Status </th></tr>' +
