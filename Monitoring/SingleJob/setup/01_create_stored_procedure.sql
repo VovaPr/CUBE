@@ -1,5 +1,5 @@
 -- SingleJob Setup - Step 1
--- Create SP_SendSqlAgentLastRunStatusReport on the target server.
+-- Create SP_SendSqlJobsLastRunStatusReport on the target server.
 -- Prerequisite: DBA_DB database must already exist.
 --
 -- Logic: checks the last completed run (step_id = 0) of every enabled SQL Agent job.
@@ -9,10 +9,10 @@
 USE [DBA_DB]
 GO
 
-CREATE OR ALTER PROCEDURE dbo.SP_SendSqlAgentLastRunStatusReport
+CREATE OR ALTER PROCEDURE dbo.SP_SendSqlJobsLastRunStatusReport
     @MailProfile NVARCHAR(256) = N'SQLAlerts',
     @Recipients  NVARCHAR(MAX) = N'sqlalerts@cube.global',
-    @Subject     NVARCHAR(256) = N'CUBEPRODSQL SQL Agent Last Run Status Report'
+    @Subject     NVARCHAR(256) = N'CUBEPRODSQL SQL Jobs Last Run Status Report'
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -144,7 +144,7 @@ BEGIN
         FOR XML PATH('tr'), ELEMENTS
     ) AS NVARCHAR(MAX));
 
-    SET @Body = N'<html><body><H4>CUBEPRODSQL SQL Agent Last Run Status Report</H4>' +
+    SET @Body = N'<html><body><H4>CUBEPRODSQL SQL Jobs Last Run Status Report</H4>' +
                 N'<table border = 1><tr>' +
                 N'<th> JobName </th><th> StepId </th><th> StepName </th><th> RunDateAndTime </th>' +
                 N'<th> Duration </th><th> RunStatus </th><th> Message </th><th> Status </th></tr>' +
