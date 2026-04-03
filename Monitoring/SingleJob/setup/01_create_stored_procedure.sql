@@ -1,0 +1,161 @@
+-- SingleJob Setup - Step 1
+-- Create SP_SendSqlAgentLastRunStatusReport on the target server.
+-- Prerequisite: DBA_DB database must already exist.
+--
+-- Logic: checks the last completed run (step_id = 0) of every enabled SQL Agent job.
+-- If the last run ended with Failed (0) or Canceled (3), the job is included in the
+-- HTML email report. If all jobs are healthy, a "no failures" row is sent instead.
+
+USE [DBA_DB]
+GO
+
+CREATE OR ALTER PROCEDURE dbo.SP_SendSqlAgentLastRunStatusReport
+    @MailProfile NVARCHAR(256) = N'SQLAlerts',
+    @Recipients  NVARCHAR(MAX) = N'sqlalerts@cube.global',
+    @Subject     NVARCHAR(256) = N'CUBEPRODSQL SQL Agent Last Run Status Report'
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DROP TABLE IF EXISTS #Result;
+
+    CREATE TABLE #Result
+    (
+         Id             INT IDENTITY(1,1) PRIMARY KEY
+        ,JobName        NVARCHAR(200)
+        ,StepId         NVARCHAR(10)
+        ,StepName       NVARCHAR(200)
+        ,RunDateAndTime NVARCHAR(30)
+        ,Duration       NVARCHAR(50)
+        ,RunStatus      NVARCHAR(20)
+        ,[Message]      NVARCHAR(MAX)
+        ,[Status]       NVARCHAR(200)
+    );
+
+    -- Check if any enabled job's last run ended with Failed or Canceled.
+    -- Only the job-level outcome record (step_id = 0) is evaluated per job.
+    IF EXISTS (
+        SELECT TOP (1) 1
+        FROM msdb.dbo.sysjobs sj
+        JOIN (
+            SELECT
+                 job_id
+                ,step_id
+                ,run_date
+                ,run_time
+                ,run_duration
+                ,run_status
+                ,[message]
+                ,ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY instance_id DESC) AS rn
+            FROM msdb.dbo.sysjobhistory
+            WHERE step_id = 0
+        ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
+        WHERE sj.enabled = 1
+          AND lr.run_status IN (0, 3)
+    )
+    BEGIN
+        INSERT INTO #Result
+        (
+             JobName
+            ,StepId
+            ,StepName
+            ,RunDateAndTime
+            ,Duration
+            ,RunStatus
+            ,[Message]
+            ,[Status]
+        )
+        SELECT
+             sj.[name] AS JobName
+            ,CONVERT(NVARCHAR(10), lr.step_id) AS StepId
+            ,N'Job Status' AS StepName
+            ,CONVERT(NVARCHAR(30), msdb.dbo.agent_datetime(lr.run_date, lr.run_time), 120) AS RunDateAndTime
+            ,STUFF(STUFF(RIGHT('000000' + CAST(lr.run_duration AS VARCHAR(6)), 6), 3, 0, ':'), 6, 0, ':') AS Duration
+            ,CASE lr.run_status
+                WHEN 0 THEN N'Failed'
+                WHEN 3 THEN N'Canceled'
+             END AS RunStatus
+            ,CONVERT(NVARCHAR(MAX), lr.[message]) AS [Message]
+            ,N'Please check the SQL agent job history table for failing job and step.' AS [Status]
+        FROM msdb.dbo.sysjobs sj
+        JOIN (
+            SELECT
+                 job_id
+                ,step_id
+                ,run_date
+                ,run_time
+                ,run_duration
+                ,run_status
+                ,[message]
+                ,ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY instance_id DESC) AS rn
+            FROM msdb.dbo.sysjobhistory
+            WHERE step_id = 0
+        ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
+        WHERE sj.enabled = 1
+          AND lr.run_status IN (0, 3)
+        ORDER BY sj.[name];
+    END
+    ELSE
+    BEGIN
+        INSERT INTO #Result
+        (
+             JobName
+            ,StepId
+            ,StepName
+            ,RunDateAndTime
+            ,Duration
+            ,RunStatus
+            ,[Message]
+            ,[Status]
+        )
+        SELECT
+             N'N/A' AS JobName
+            ,N'N/A' AS StepId
+            ,N'N/A' AS StepName
+            ,N'N/A' AS RunDateAndTime
+            ,N'N/A' AS Duration
+            ,N'N/A' AS RunStatus
+            ,N'N/A' AS [Message]
+            ,N'No failing SQL agent jobs detected in the last run of each job.' AS [Status];
+    END;
+
+    DECLARE @Xml  NVARCHAR(MAX);
+    DECLARE @Body NVARCHAR(MAX);
+
+    SET @Xml = CAST((
+        SELECT
+             [JobName]        AS 'td'
+            ,''
+            ,[StepId]         AS 'td'
+            ,''
+            ,[StepName]       AS 'td'
+            ,''
+            ,[RunDateAndTime] AS 'td'
+            ,''
+            ,[Duration]       AS 'td'
+            ,''
+            ,[RunStatus]      AS 'td'
+            ,''
+            ,[Message]        AS 'td'
+            ,''
+            ,[Status]         AS 'td'
+        FROM #Result
+        ORDER BY Id ASC
+        FOR XML PATH('tr'), ELEMENTS
+    ) AS NVARCHAR(MAX));
+
+    SET @Body = N'<html><body><H4>CUBEPRODSQL SQL Agent Last Run Status Report</H4>' +
+                N'<table border = 1><tr>' +
+                N'<th> JobName </th><th> StepId </th><th> StepName </th><th> RunDateAndTime </th>' +
+                N'<th> Duration </th><th> RunStatus </th><th> Message </th><th> Status </th></tr>' +
+                ISNULL(@Xml, N'') +
+                N'</table></body></html>';
+
+    EXEC msdb.dbo.sp_send_dbmail
+        @profile_name = @MailProfile,
+        @recipients   = @Recipients,
+        @subject      = @Subject,
+        @body         = @Body,
+        @body_format  = 'HTML';
+END
+GO
