@@ -1,16 +1,16 @@
 -- SingleJob Rollback - Step 2
--- Drops SP_SendSqlJobsLastRunStatusReport from DBA_DB.
+-- Drops SP_SendSqlJobsLastRunStatusAlert from DBA_DB.
 --
 -- Reverses: 01_create_stored_procedure.sql
 
 USE [DBA_DB];
 GO
 
-IF OBJECT_ID('dbo.SP_SendSqlJobsLastRunStatusReport', 'P') IS NOT NULL
+IF OBJECT_ID('dbo.SP_SendSqlJobsLastRunStatusAlert', 'P') IS NOT NULL
 BEGIN
-    DROP PROCEDURE dbo.SP_SendSqlJobsLastRunStatusReport;
-    PRINT 'Procedure dbo.SP_SendSqlJobsLastRunStatusReport dropped.';
+    DROP PROCEDURE dbo.SP_SendSqlJobsLastRunStatusAlert;
+    PRINT 'Procedure dbo.SP_SendSqlJobsLastRunStatusAlert dropped.';
 END
 ELSE
-    PRINT 'Procedure dbo.SP_SendSqlJobsLastRunStatusReport does not exist, nothing to drop.';
+    PRINT 'Procedure dbo.SP_SendSqlJobsLastRunStatusAlert does not exist, nothing to drop.';
 GO

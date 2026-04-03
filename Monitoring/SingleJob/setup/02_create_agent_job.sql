@@ -1,6 +1,6 @@
 -- SingleJob Setup - Step 2
 -- Create Agent Job on the target server.
--- Job: DBA - SQL Jobs Last Run Status Report -> runs at :01 every hour
+-- Job: DBA - SQL Jobs Last Run Status Alert -> runs at :01 every hour
 --
 -- Prerequisite: Step 1 (01_create_stored_procedure.sql) must be applied first.
 -- Prerequisite: Monitoring operator must exist (created by central setup or manually).
@@ -32,19 +32,19 @@ ELSE
 GO
 
 -- ============================================================
--- JOB: DBA - SQL Jobs Last Run Status Report
+-- JOB: DBA - SQL Jobs Last Run Status Alert
 -- ============================================================
-IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = N'DBA - SQL Jobs Last Run Status Report')
+IF EXISTS (SELECT 1 FROM dbo.sysjobs WHERE name = N'DBA - SQL Jobs Last Run Status Alert')
 BEGIN
     EXEC sp_delete_job
-        @job_name                = N'DBA - SQL Jobs Last Run Status Report',
+        @job_name                = N'DBA - SQL Jobs Last Run Status Alert',
         @delete_unused_schedule  = 1;
-    PRINT 'Existing job "DBA - SQL Jobs Last Run Status Report" deleted before re-creation.';
+    PRINT 'Existing job "DBA - SQL Jobs Last Run Status Alert" deleted before re-creation.';
 END
 GO
 
 EXEC sp_add_job
-    @job_name                   = N'DBA - SQL Jobs Last Run Status Report',
+    @job_name                   = N'DBA - SQL Jobs Last Run Status Alert',
     @enabled                    = 1,
     @description                = N'Checks the last run outcome of every enabled SQL Agent job. Sends an HTML email report if any job last ended with Failed or Canceled.','
     @owner_login_name           = N'sa',
@@ -54,11 +54,11 @@ GO
 
 -- Step 1: Send Last Run Status Report
 EXEC sp_add_jobstep
-    @job_name        = N'DBA - SQL Jobs Last Run Status Report',
+    @job_name        = N'DBA - SQL Jobs Last Run Status Alert',
     @step_name       = N'Send Last Run Status Report',
     @step_id         = 1,
     @subsystem       = N'TSQL',
-    @command         = N'EXEC DBA_DB.dbo.SP_SendSqlJobsLastRunStatusReport',
+    @command         = N'EXEC DBA_DB.dbo.SP_SendSqlJobsLastRunStatusAlert',
     @database_name   = N'DBA_DB',
     @retry_attempts  = 2,
     @retry_interval  = 1,
@@ -69,16 +69,16 @@ GO
 -- ============================================================
 -- Schedule: every hour at :01
 -- ============================================================
-IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = N'DBA - SQL Jobs Last Run Status Report - Hourly at :01')
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = N'DBA - SQL Jobs Last Run Status Alert - Hourly at :01')
 BEGIN
     EXEC msdb.dbo.sp_delete_schedule
-        @schedule_name = N'DBA - SQL Jobs Last Run Status Report - Hourly at :01';
+        @schedule_name = N'DBA - SQL Jobs Last Run Status Alert - Hourly at :01';
     PRINT 'Existing schedule deleted before re-creation.';
 END
 GO
 
 EXEC sp_add_schedule
-    @schedule_name      = N'DBA - SQL Jobs Last Run Status Report - Hourly at :01',
+    @schedule_name      = N'DBA - SQL Jobs Last Run Status Alert - Hourly at :01',
     @freq_type          = 4,
     @freq_interval      = 1,
     @freq_subday_type   = 8,
@@ -88,11 +88,11 @@ EXEC sp_add_schedule
 GO
 
 EXEC sp_attach_schedule
-    @job_name      = N'DBA - SQL Jobs Last Run Status Report',
-    @schedule_name = N'DBA - SQL Jobs Last Run Status Report - Hourly at :01';
+    @job_name      = N'DBA - SQL Jobs Last Run Status Alert',
+    @schedule_name = N'DBA - SQL Jobs Last Run Status Alert - Hourly at :01';
 GO
 
 EXEC sp_add_jobserver
-    @job_name    = N'DBA - SQL Jobs Last Run Status Report',
+    @job_name    = N'DBA - SQL Jobs Last Run Status Alert',
     @server_name = N'(local)';
 GO

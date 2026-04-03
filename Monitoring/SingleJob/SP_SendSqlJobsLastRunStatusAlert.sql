@@ -1,7 +1,7 @@
 USE [DBA_DB]
 GO
 
-CREATE OR ALTER PROCEDURE dbo.SP_SendSqlJobsLastRunStatusReport
+CREATE OR ALTER PROCEDURE dbo.SP_SendSqlJobsLastRunStatusAlert
     @MailProfile NVARCHAR(256) = N'SQLAlerts',
     @Recipients  NVARCHAR(MAX) = N'sqlalerts@cube.global',
     @Subject     NVARCHAR(256) = NULL
@@ -10,7 +10,7 @@ BEGIN
     SET NOCOUNT ON;
 
     IF @Subject IS NULL
-        SET @Subject = CAST(@@SERVERNAME AS NVARCHAR(128)) + N' SQL Jobs Last Run Status Report';
+        SET @Subject = CAST(@@SERVERNAME AS NVARCHAR(128)) + N' SQL Jobs Last Run Status Alert';
 
     DROP TABLE IF EXISTS #Result;
 
@@ -89,30 +89,10 @@ BEGIN
         WHERE sj.enabled = 1
           AND lr.run_status IN (0, 3)
         ORDER BY sj.[name];
-    END
-    ELSE
-    BEGIN
-        INSERT INTO #Result
-        (
-             JobName
-            ,StepId
-            ,StepName
-            ,RunDateAndTime
-            ,Duration
-            ,RunStatus
-            ,[Message]
-            ,[Status]
-        )
-        SELECT
-             N'N/A' AS JobName
-            ,N'N/A' AS StepId
-            ,N'N/A' AS StepName
-            ,N'N/A' AS RunDateAndTime
-            ,N'N/A' AS Duration
-            ,N'N/A' AS RunStatus
-            ,N'N/A' AS [Message]
-            ,N'No failing SQL agent jobs detected in the last run of each job.' AS [Status];
     END;
+
+    IF NOT EXISTS (SELECT 1 FROM #Result)
+        RETURN;
 
     DECLARE @Xml  NVARCHAR(MAX);
     DECLARE @Body NVARCHAR(MAX);
