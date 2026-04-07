@@ -8,17 +8,36 @@ No email is sent when all jobs are healthy.
 
 ## How it works
 
-### Section 1 — Regular jobs
-- Queries `msdb.dbo.sysjobhistory` (step_id = 0 — overall job outcome) per job.
-- Takes the **latest** record per job using `ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY instance_id DESC)`.
-- Excludes all replication agent jobs (category `REPL-%`).
-- Alerts if last run status is **Failed (0)** or **Canceled (3)**.
-- If recovered (last run succeeded) — no alert.
+### Stored Procedure Flow
 
-### Section 2 — Replication agents (category `REPL-%`)
-- Checks `msdb.dbo.sysjobactivity` for the current SQL Agent session.
-- If the agent is **currently running** → excluded (continuous agents like Log Reader and Distribution are expected to run indefinitely).
-- If **not running** and last completed run was Failed/Canceled → alert with dedicated message.
+The procedure `dbo.SP_SendSqlJobsLastRunStatusAlert` runs in `DBA_DB` and writes candidate alerts into a temp table (`#Result`).
+If `#Result` is empty, it exits without email.
+
+### Step 1 - Build latest job outcome snapshot
+- Source: `msdb.dbo.sysjobhistory`, `step_id = 0` only (job-level outcome row, not per-step rows).
+- For each `job_id`, the latest execution is selected by:
+    `ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY instance_id DESC)`.
+
+### Step 2 - Evaluate regular SQL Agent jobs
+- Includes only enabled jobs: `sj.enabled = 1`.
+- Excludes replication categories: `category NOT LIKE 'REPL-%'`.
+- Adds alert rows when latest status is:
+    - `0` = Failed
+    - `3` = Canceled
+
+### Step 3 - Evaluate replication jobs separately
+- Includes only enabled jobs in replication categories: `category LIKE 'REPL-%'`.
+- Checks current execution state in `msdb.dbo.sysjobactivity` for the latest SQL Agent session.
+- Decision:
+    - If replication job is currently running -> healthy (no alert row).
+    - If not running and latest completed run is Failed/Canceled -> alert row is added.
+
+This separation is intentional because replication agents can run continuously by design.
+
+### Step 4 - Send email only when alert exists
+- If no rows were added to `#Result`, procedure returns immediately.
+- If rows exist, HTML body is generated and sent via `msdb.dbo.sp_send_dbmail`.
+- Subject default: `<SERVERNAME> SQL Jobs Last Run Status Alert` (from `@@SERVERNAME`), unless overridden by `@Subject`.
 
 ---
 
