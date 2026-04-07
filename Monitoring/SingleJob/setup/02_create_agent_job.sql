@@ -50,12 +50,13 @@ EXEC sp_add_job
     @owner_login_name           = N'sa',
     @notify_level_email         = 2,
     @notify_email_operator_name = N'Monitoring';
+PRINT 'Job "DBA - SQL Jobs Last Run Status Alert" created.';
 GO
 
--- Step 1: Send Last Run Status Report
+-- Step 1: Send Last Run Status Alert
 EXEC sp_add_jobstep
     @job_name        = N'DBA - SQL Jobs Last Run Status Alert',
-    @step_name       = N'Send Last Run Status Report',
+    @step_name       = N'Send Last Run Status Alert',
     @step_id         = 1,
     @subsystem       = N'TSQL',
     @command         = N'EXEC DBA_DB.dbo.SP_SendSqlJobsLastRunStatusAlert',
@@ -64,6 +65,7 @@ EXEC sp_add_jobstep
     @retry_interval  = 1,
     @on_success_action = 1,
     @on_fail_action    = 2;
+PRINT 'Job step "Send Last Run Status Alert" created.';
 GO
 
 -- ============================================================
@@ -72,9 +74,12 @@ GO
 IF EXISTS (SELECT 1 FROM msdb.dbo.sysschedules WHERE name = N'DBA - SQL Jobs Last Run Status Alert - Hourly at :01')
 BEGIN
     EXEC msdb.dbo.sp_delete_schedule
-        @schedule_name = N'DBA - SQL Jobs Last Run Status Alert - Hourly at :01';
-    PRINT 'Existing schedule deleted before re-creation.';
+        @schedule_name = N'DBA - SQL Jobs Last Run Status Alert - Hourly at :01',
+        @force_delete  = 1;
+    PRINT 'Existing schedule "DBA - SQL Jobs Last Run Status Alert - Hourly at :01" deleted before re-creation.';
 END
+ELSE
+    PRINT 'Schedule "DBA - SQL Jobs Last Run Status Alert - Hourly at :01" does not exist, will be created.';
 GO
 
 EXEC sp_add_schedule
@@ -85,14 +90,17 @@ EXEC sp_add_schedule
     @freq_subday_interval = 1,
     @active_start_time  = 000100,
     @active_end_time    = 235959;
+PRINT 'Schedule "DBA - SQL Jobs Last Run Status Alert - Hourly at :01" created.';
 GO
 
 EXEC sp_attach_schedule
     @job_name      = N'DBA - SQL Jobs Last Run Status Alert',
     @schedule_name = N'DBA - SQL Jobs Last Run Status Alert - Hourly at :01';
+PRINT 'Schedule attached to job.';
 GO
 
 EXEC sp_add_jobserver
     @job_name    = N'DBA - SQL Jobs Last Run Status Alert',
     @server_name = N'(local)';
+PRINT 'Job registered on local server. Setup complete.';
 GO
