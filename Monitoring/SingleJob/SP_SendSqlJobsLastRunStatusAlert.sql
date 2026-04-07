@@ -50,7 +50,7 @@ BEGIN
         ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
         WHERE sj.enabled = 1
           AND lr.run_status IN (0, 3)
-          AND ISNULL(sc.[name], N'') NOT LIKE N'REPL%'
+          AND ISNULL(sc.[name], N'') NOT LIKE N'REPL-%'
     )
     BEGIN
         INSERT INTO #Result
@@ -95,7 +95,7 @@ BEGIN
         ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
         WHERE sj.enabled = 1
           AND lr.run_status IN (0, 3)
-          AND ISNULL(sc.[name], N'') NOT LIKE N'REPL%'
+          AND ISNULL(sc.[name], N'') NOT LIKE N'REPL-%'
         ORDER BY sj.[name];
     END;
 
@@ -133,7 +133,7 @@ BEGIN
     JOIN msdb.dbo.syscategories sc
         ON sj.category_id = sc.category_id
        AND sc.category_class = 1
-       AND sc.[name] LIKE N'REPL%'
+       AND sc.[name] LIKE N'REPL-%'
     JOIN (
         SELECT
              job_id
