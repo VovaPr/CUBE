@@ -4,14 +4,15 @@
 --
 -- Logic: checks the last completed run (step_id = 0) of every enabled SQL Agent job.
 -- If the last run ended with Failed (0) or Canceled (3), the job is included in the
--- HTML email report. If all jobs are healthy, a "no failures" row is sent instead.
+-- HTML email alert. Replication agents (REPL-* category) are checked separately.
+-- No email is sent if all jobs are healthy.
 
 USE [DBA_DB]
 GO
 
 CREATE OR ALTER PROCEDURE dbo.SP_SendSqlJobsLastRunStatusAlert
     @MailProfile NVARCHAR(256) = N'SQLAlerts',
-    @Recipients  NVARCHAR(MAX) = N'Volodymyr.Prysyazhnyuk@cube.global; DEV Monitoring - Database Team <559c4de8.cube.global@emea.teams.ms>',
+    @Recipients  NVARCHAR(MAX) = N'DEV Monitoring - Database Team <559c4de8.cube.global@emea.teams.ms>',
     @Subject     NVARCHAR(256) = NULL
 AS
 BEGIN

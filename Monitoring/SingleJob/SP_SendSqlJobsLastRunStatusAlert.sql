@@ -3,7 +3,7 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.SP_SendSqlJobsLastRunStatusAlert
     @MailProfile NVARCHAR(256) = N'SQLAlerts',
-    @Recipients  NVARCHAR(MAX) = N'sqlalerts@cube.global',
+    @Recipients  NVARCHAR(MAX) = N'DEV Monitoring - Database Team <559c4de8.cube.global@emea.teams.ms>',
     @Subject     NVARCHAR(256) = NULL
 AS
 BEGIN
