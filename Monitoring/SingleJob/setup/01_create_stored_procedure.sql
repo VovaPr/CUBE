@@ -58,8 +58,7 @@ BEGIN
         ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
         WHERE sj.enabled = 1
           AND lr.run_status IN (0, 3)
-                    AND ISNULL(sc.[name], N'') NOT LIKE N'REPL%'
-                    AND sj.[name] NOT LIKE N'%-Customer-%'
+          AND ISNULL(sc.[name], N'') NOT LIKE N'REPL%'
     )
     BEGIN
         INSERT INTO #Result
@@ -104,10 +103,70 @@ BEGIN
         ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
         WHERE sj.enabled = 1
           AND lr.run_status IN (0, 3)
-                    AND ISNULL(sc.[name], N'') NOT LIKE N'REPL%'
-                    AND sj.[name] NOT LIKE N'%-Customer-%'
+          AND ISNULL(sc.[name], N'') NOT LIKE N'REPL%'
         ORDER BY sj.[name];
     END;
+
+    -- ============================================================
+    -- Section 2: Replication agents (REPL% category)
+    -- Continuous agents (Log Reader, Distribution) run indefinitely;
+    -- if currently running they are healthy and excluded from alerts.
+    -- Alert is raised only when the agent has stopped and its last
+    -- completed run ended with Failed (0) or Canceled (3).
+    -- ============================================================
+    INSERT INTO #Result
+    (
+         JobName
+        ,StepId
+        ,StepName
+        ,RunDateAndTime
+        ,Duration
+        ,RunStatus
+        ,[Message]
+        ,[Status]
+    )
+    SELECT
+         sj.[name] AS JobName
+        ,CONVERT(NVARCHAR(10), lr.step_id) AS StepId
+        ,N'Job Status' AS StepName
+        ,CONVERT(NVARCHAR(30), msdb.dbo.agent_datetime(lr.run_date, lr.run_time), 120) AS RunDateAndTime
+        ,STUFF(STUFF(RIGHT('000000' + CAST(lr.run_duration AS VARCHAR(6)), 6), 3, 0, ':') , 6, 0, ':') AS Duration
+        ,CASE lr.run_status
+            WHEN 0 THEN N'Failed'
+            WHEN 3 THEN N'Canceled'
+         END AS RunStatus
+        ,CONVERT(NVARCHAR(MAX), lr.[message]) AS [Message]
+        ,N'Replication agent stopped unexpectedly. Please check the job history for details.' AS [Status]
+    FROM msdb.dbo.sysjobs sj
+    JOIN msdb.dbo.syscategories sc
+        ON sj.category_id = sc.category_id
+       AND sc.category_class = 1
+       AND sc.[name] LIKE N'REPL%'
+    JOIN (
+        SELECT
+             job_id
+            ,step_id
+            ,run_date
+            ,run_time
+            ,run_duration
+            ,run_status
+            ,[message]
+            ,ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY instance_id DESC) AS rn
+        FROM msdb.dbo.sysjobhistory
+        WHERE step_id = 0
+    ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
+    -- Exclude agents currently running (healthy for continuous replication agents)
+    LEFT JOIN (
+        SELECT DISTINCT ja.job_id
+        FROM msdb.dbo.sysjobactivity ja
+        WHERE ja.session_id = (SELECT MAX(session_id) FROM msdb.dbo.syssessions)
+          AND ja.start_execution_date IS NOT NULL
+          AND ja.stop_execution_date IS NULL
+    ) AS running ON sj.job_id = running.job_id
+    WHERE sj.enabled = 1
+      AND running.job_id IS NULL       -- not currently running
+      AND lr.run_status IN (0, 3)      -- last completed run was Failed or Canceled
+    ORDER BY sj.[name];
 
     IF NOT EXISTS (SELECT 1 FROM #Result)
         RETURN;
