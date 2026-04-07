@@ -46,7 +46,7 @@ GO
 EXEC sp_add_job
     @job_name                   = N'DBA - SQL Jobs Last Run Status Alert',
     @enabled                    = 1,
-    @description                = N'Checks the last run outcome of every enabled SQL Agent job. Sends an HTML email report if any job last ended with Failed or Canceled.','
+    @description                = N'Checks the last run outcome of every enabled SQL Agent job. Sends an HTML email alert if any job last ended with Failed or Canceled.',
     @owner_login_name           = N'sa',
     @notify_level_email         = 2,
     @notify_email_operator_name = N'Monitoring';
