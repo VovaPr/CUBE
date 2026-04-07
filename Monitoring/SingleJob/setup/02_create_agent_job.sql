@@ -61,7 +61,7 @@ EXEC sp_add_jobstep
     @subsystem       = N'TSQL',
     @command         = N'EXEC DBA_DB.dbo.SP_SendSqlJobsLastRunStatusAlert',
     @database_name   = N'DBA_DB',
-    @retry_attempts  = 1,
+    @retry_attempts  = 0,
     @retry_interval  = 1,
     @on_success_action = 1,
     @on_fail_action    = 2;
