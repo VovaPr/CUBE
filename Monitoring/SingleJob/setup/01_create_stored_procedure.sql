@@ -11,7 +11,7 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.SP_SendSqlJobsLastRunStatusAlert
     @MailProfile NVARCHAR(256) = N'SQLAlerts',
-    @Recipients  NVARCHAR(MAX) = N'sqlalerts@cube.global',
+    @Recipients  NVARCHAR(MAX) = N'Volodymyr.Prysyazhnyuk@cube.global; DEV Monitoring - Database Team <559c4de8.cube.global@emea.teams.ms>',
     @Subject     NVARCHAR(256) = NULL
 AS
 BEGIN
@@ -35,11 +35,14 @@ BEGIN
         ,[Status]       NVARCHAR(200)
     );
 
-    -- Check if any enabled job's last run ended with Failed or Canceled.
+    -- Check if any enabled non-replication job's last run ended with Failed or Canceled.
     -- Only the job-level outcome record (step_id = 0) is evaluated per job.
     IF EXISTS (
         SELECT TOP (1) 1
         FROM msdb.dbo.sysjobs sj
+        LEFT JOIN msdb.dbo.syscategories sc
+            ON sj.category_id = sc.category_id
+           AND sc.category_class = 1
         JOIN (
             SELECT
                  job_id
@@ -55,6 +58,8 @@ BEGIN
         ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
         WHERE sj.enabled = 1
           AND lr.run_status IN (0, 3)
+                    AND ISNULL(sc.[name], N'') NOT LIKE N'REPL%'
+                    AND sj.[name] NOT LIKE N'%-Customer-%'
     )
     BEGIN
         INSERT INTO #Result
@@ -81,6 +86,9 @@ BEGIN
             ,CONVERT(NVARCHAR(MAX), lr.[message]) AS [Message]
             ,N'Please check the SQL agent job history table for failing job and step.' AS [Status]
         FROM msdb.dbo.sysjobs sj
+        LEFT JOIN msdb.dbo.syscategories sc
+            ON sj.category_id = sc.category_id
+           AND sc.category_class = 1
         JOIN (
             SELECT
                  job_id
@@ -96,6 +104,8 @@ BEGIN
         ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
         WHERE sj.enabled = 1
           AND lr.run_status IN (0, 3)
+                    AND ISNULL(sc.[name], N'') NOT LIKE N'REPL%'
+                    AND sj.[name] NOT LIKE N'%-Customer-%'
         ORDER BY sj.[name];
     END;
 
