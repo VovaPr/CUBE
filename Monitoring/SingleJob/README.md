@@ -34,7 +34,20 @@ If `#Result` is empty, it exits without email.
 
 This separation is intentional because replication agents can run continuously by design.
 
-### Step 4 - Send email only when alert exists
+### Step 4 - Resolve recipients by environment
+- If `@Recipients` is explicitly passed, that value is used.
+- If `@Recipients` is `NULL`, procedure detects environment from `@@SERVERNAME`:
+    - contains `DEV` -> `DEV`
+    - contains `TEST` / `TST` -> `TEST`
+    - contains `UAT` -> `UAT`
+    - otherwise -> `PROD`
+- Recipients are loaded from internal temp table mapping:
+    - `DEV` -> `DEV Monitoring - Database Team <eba2b854.cube.global@emea.teams.ms>`
+    - `TEST` -> `TEST Monitoring - Database Team <7369ba4a.cube.global@emea.teams.ms>`
+    - `UAT` -> `UAT Monitoring - Database Team <145871a8.cube.global@emea.teams.ms>`
+    - `PROD` -> `Prod - SQL Errors and Long Running Queries - Database Team <61f17278.cube.global@emea.teams.ms>`
+
+### Step 5 - Send email only when alert exists
 - If no rows were added to `#Result`, procedure returns immediately.
 - If rows exist, HTML body is generated and sent via `msdb.dbo.sp_send_dbmail`.
 - Subject default: `<SERVERNAME> SQL Jobs Last Run Status Alert` (from `@@SERVERNAME`), unless overridden by `@Subject`.
@@ -83,7 +96,7 @@ Run scripts in order to fully remove all objects:
 | Parameter | Default | Description |
 |---|---|---|
 | `@MailProfile` | `SQLAlerts` | Database Mail profile name |
-| `@Recipients` | Teams channel address | Semicolon-separated recipient list |
+| `@Recipients` | `NULL` | Optional override. If `NULL`, recipients are auto-resolved by environment from `@@SERVERNAME` |
 | `@Subject` | `<SERVERNAME> SQL Jobs Last Run Status Alert` | Email subject — auto-populated from `@@SERVERNAME` if not provided |
 
 ---
