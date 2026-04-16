@@ -9,47 +9,8 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    DECLARE @ServerName NVARCHAR(128) = CAST(@@SERVERNAME AS NVARCHAR(128));
-    DECLARE @Environment NVARCHAR(10);
-
-    SET @Environment = CASE
-        WHEN @ServerName LIKE N'%UAT%' THEN N'UAT'
-        WHEN @ServerName LIKE N'%TEST%' OR @ServerName LIKE N'%TST%' THEN N'TEST'
-        WHEN @ServerName LIKE N'%DEV%' THEN N'DEV'
-        ELSE N'PROD'
-    END;
-
     IF @Subject IS NULL
-        SET @Subject = @ServerName + N' SQL Jobs Last Run Status Alert';
-
-    -- Step 3: Resolve recipients by environment when @Recipients is not provided.
-    IF @Recipients IS NULL
-    BEGIN
-        DROP TABLE IF EXISTS #AlertRecipientsByEnv;
-
-        CREATE TABLE #AlertRecipientsByEnv
-        (
-             EnvironmentName NVARCHAR(10) PRIMARY KEY
-            ,Recipients      NVARCHAR(MAX) NOT NULL
-        );
-
-        INSERT INTO #AlertRecipientsByEnv (EnvironmentName, Recipients)
-        VALUES
-             (N'DEV',  N'DEV Monitoring - Database Team <eba2b854.cube.global@emea.teams.ms>')
-            ,(N'TEST', N'TEST Monitoring - Database Team <7369ba4a.cube.global@emea.teams.ms>')
-            ,(N'UAT',  N'UAT Monitoring - Database Team <145871a8.cube.global@emea.teams.ms>')
-            ,(N'PROD', N'Prod - SQL Errors and Long Running Queries - Database Team <61f17278.cube.global@emea.teams.ms>');
-
-        SELECT @Recipients = r.Recipients
-        FROM #AlertRecipientsByEnv r
-        WHERE r.EnvironmentName = @Environment;
-
-        IF @Recipients IS NULL
-        BEGIN
-            RAISERROR(N'No recipients configured for environment %s.', 16, 1, @Environment);
-            RETURN;
-        END;
-    END;
+        SET @Subject = CAST(@@SERVERNAME AS NVARCHAR(128)) + N' SQL Jobs Last Run Status Alert';
 
     DROP TABLE IF EXISTS #Result;
 
