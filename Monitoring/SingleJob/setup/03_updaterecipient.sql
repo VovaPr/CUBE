@@ -11,6 +11,7 @@ GO
 DECLARE @ServerName NVARCHAR(128) = CAST(@@SERVERNAME AS NVARCHAR(128));
 DECLARE @Environment NVARCHAR(10);
 DECLARE @Recipients NVARCHAR(MAX);
+DECLARE @OperatorEmail NVARCHAR(256);
 DECLARE @Command NVARCHAR(MAX);
 
 SET @Environment = CASE
@@ -26,23 +27,46 @@ CREATE TABLE #AlertRecipientsByEnv
 (
      EnvironmentName NVARCHAR(10) PRIMARY KEY
     ,Recipients      NVARCHAR(MAX) NOT NULL
+    ,OperatorEmail   NVARCHAR(256) NOT NULL
 );
 
-INSERT INTO #AlertRecipientsByEnv (EnvironmentName, Recipients)
+INSERT INTO #AlertRecipientsByEnv (EnvironmentName, Recipients, OperatorEmail)
 VALUES
-     (N'DEV',  N'DEV Monitoring - Database Team <eba2b854.cube.global@emea.teams.ms>')
-    ,(N'TEST', N'TEST Monitoring - Database Team <7369ba4a.cube.global@emea.teams.ms>')
-    ,(N'UAT',  N'UAT Monitoring - Database Team <145871a8.cube.global@emea.teams.ms>')
-    ,(N'PROD', N'Prod - SQL Errors and Long Running Queries - Database Team <61f17278.cube.global@emea.teams.ms>');
+     (N'DEV',  N'DEV Monitoring - Database Team <eba2b854.cube.global@emea.teams.ms>', N'eba2b854.cube.global@emea.teams.ms')
+    ,(N'TEST', N'TEST Monitoring - Database Team <7369ba4a.cube.global@emea.teams.ms>', N'7369ba4a.cube.global@emea.teams.ms')
+    ,(N'UAT',  N'UAT Monitoring - Database Team <145871a8.cube.global@emea.teams.ms>', N'145871a8.cube.global@emea.teams.ms')
+    ,(N'PROD', N'Prod - SQL Errors and Long Running Queries - Database Team <61f17278.cube.global@emea.teams.ms>', N'61f17278.cube.global@emea.teams.ms');
 
-SELECT @Recipients = r.Recipients
+SELECT
+     @Recipients = r.Recipients
+    ,@OperatorEmail = r.OperatorEmail
 FROM #AlertRecipientsByEnv r
 WHERE r.EnvironmentName = @Environment;
 
-IF @Recipients IS NULL
+IF @Recipients IS NULL OR @OperatorEmail IS NULL
 BEGIN
     RAISERROR(N'No recipients configured for environment %s.', 16, 1, @Environment);
     RETURN;
+END;
+
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE [name] = N'Monitoring')
+BEGIN
+    EXEC msdb.dbo.sp_update_operator
+        @name = N'Monitoring',
+        @enabled = 1,
+        @email_address = @OperatorEmail;
+
+    PRINT 'Operator "Monitoring" email updated: ' + @OperatorEmail;
+END
+ELSE
+BEGIN
+    EXEC msdb.dbo.sp_add_operator
+        @name = N'Monitoring',
+        @enabled = 1,
+        @email_address = @OperatorEmail,
+        @category_name = N'[Uncategorized]';
+
+    PRINT 'Operator "Monitoring" created with email: ' + @OperatorEmail;
 END;
 
 IF NOT EXISTS (
