@@ -197,7 +197,7 @@ BEGIN
         FOR XML PATH('tr'), ELEMENTS
     ) AS NVARCHAR(MAX));
 
-    SET @Body = N'<html><body><H4>' + @Subject + N'</H4>' +
+    SET @Body = N'<html><body>' +
                 N'<table border = 1><tr>' +
                 N'<th> JobName </th><th> StepId </th><th> StepName </th><th> RunDateAndTime </th>' +
                 N'<th> Duration </th><th> RunStatus </th><th> Message </th><th> Status </th></tr>' +
