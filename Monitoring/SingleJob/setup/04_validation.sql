@@ -47,7 +47,7 @@ END;
 
 EXEC msdb.dbo.sp_add_job
     @job_name = @TestJobName,
-    @enabled = 0,
+    @enabled = 1,
     @notify_level_eventlog = 2,
     @notify_level_email = 0,
     @notify_level_netsend = 0,
