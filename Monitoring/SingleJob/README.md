@@ -60,6 +60,7 @@ Run scripts in order on the target server:
 | 1 | `setup/01_create_stored_procedure.sql` | Creates `SP_SendSqlJobsLastRunStatusAlert` in `DBA_DB` |
 | 2 | `setup/02_create_agent_job.sql` | Creates the SQL Agent job and schedule in `msdb` |
 | 3 | `setup/03_updaterecipient.sql` | Detects environment, updates job step command with mapped recipients, and updates `JobMonitoring` operator email |
+| 4 | `setup/04_validation.sql` | Creates a temporary failing validation job, runs the alert job, and removes the temporary job |
 
 ### Prerequisites
 - `DBA_DB` database must exist.
