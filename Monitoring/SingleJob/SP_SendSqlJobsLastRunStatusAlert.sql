@@ -48,9 +48,10 @@ BEGIN
             FROM msdb.dbo.sysjobhistory
             WHERE step_id = 0
         ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
-        WHERE sj.enabled = 1
-          AND lr.run_status IN (0, 3)
-          AND ISNULL(sc.[name], N'') <> N'REPL-LogReader'
+                WHERE sj.enabled = 1
+                    AND lr.run_status IN (0, 3)
+                    AND ISNULL(sc.[name], N'') NOT LIKE N'REPL-%'
+                    AND ISNULL(sc.[name], N'') NOT LIKE N'Replication%'
     )
     BEGIN
         INSERT INTO #Result
@@ -93,9 +94,10 @@ BEGIN
             FROM msdb.dbo.sysjobhistory
             WHERE step_id = 0
         ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
-        WHERE sj.enabled = 1
-          AND lr.run_status IN (0, 3)
-          AND ISNULL(sc.[name], N'') <> N'REPL-LogReader'
+                WHERE sj.enabled = 1
+                    AND lr.run_status IN (0, 3)
+                    AND ISNULL(sc.[name], N'') NOT LIKE N'REPL-%'
+                    AND ISNULL(sc.[name], N'') NOT LIKE N'Replication%'
         ORDER BY sj.[name];
     END;
 

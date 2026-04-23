@@ -4,7 +4,7 @@
 --
 -- Logic: checks the last completed run (step_id = 0) of every enabled SQL Agent job.
 -- If the last run ended with Failed (0) or Canceled (3), the job is included in the
--- HTML email alert. Replication agents (REPL-* category) are checked separately.
+-- HTML email alert. Replication-related categories are excluded from this procedure.
 -- No email is sent if all jobs are healthy.
 
 USE [DBA_DB]
@@ -57,9 +57,10 @@ BEGIN
             FROM msdb.dbo.sysjobhistory
             WHERE step_id = 0
         ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
-        WHERE sj.enabled = 1
-          AND lr.run_status IN (0, 3)
-          AND ISNULL(sc.[name], N'') <> N'REPL-LogReader'
+                WHERE sj.enabled = 1
+                    AND lr.run_status IN (0, 3)
+                    AND ISNULL(sc.[name], N'') NOT LIKE N'REPL-%'
+                    AND ISNULL(sc.[name], N'') NOT LIKE N'Replication%'
     )
     BEGIN
         INSERT INTO #Result
@@ -102,9 +103,10 @@ BEGIN
             FROM msdb.dbo.sysjobhistory
             WHERE step_id = 0
         ) AS lr ON sj.job_id = lr.job_id AND lr.rn = 1
-        WHERE sj.enabled = 1
-          AND lr.run_status IN (0, 3)
-          AND ISNULL(sc.[name], N'') <> N'REPL-LogReader'
+                WHERE sj.enabled = 1
+                    AND lr.run_status IN (0, 3)
+                    AND ISNULL(sc.[name], N'') NOT LIKE N'REPL-%'
+                    AND ISNULL(sc.[name], N'') NOT LIKE N'Replication%'
         ORDER BY sj.[name];
     END;
 
