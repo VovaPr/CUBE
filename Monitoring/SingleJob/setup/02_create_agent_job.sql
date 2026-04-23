@@ -3,7 +3,7 @@
 -- Job: DBA - SQL Jobs Last Run Status Alert -> runs at :01 every hour
 --
 -- Prerequisite: Step 1 (01_create_stored_procedure.sql) must be applied first.
--- Prerequisite: Monitoring operator must exist (created by central setup or manually).
+-- Prerequisite: JobMonitoring operator must exist (created by central setup or manually).
 
 USE msdb;
 GO
@@ -11,10 +11,10 @@ GO
 -- ============================================================
 -- Operator (idempotent - create if not already present)
 -- ============================================================
-IF NOT EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE name = N'Monitoring')
+IF NOT EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE name = N'JobMonitoring')
 BEGIN
     EXEC msdb.dbo.sp_add_operator
-        @name                         = N'Monitoring',
+        @name                         = N'JobMonitoring',
         @enabled                      = 1,
         @weekday_pager_start_time     = 90000,
         @weekday_pager_end_time       = 180000,
@@ -25,10 +25,10 @@ BEGIN
         @pager_days                   = 0,
         @email_address                = N'559c4de8.cube.global@emea.teams.ms',
         @category_name                = N'[Uncategorized]';
-    PRINT 'Operator "Monitoring" created.';
+    PRINT 'Operator "JobMonitoring" created.';
 END
 ELSE
-    PRINT 'Operator "Monitoring" already exists, skipping.';
+    PRINT 'Operator "JobMonitoring" already exists, skipping.';
 GO
 
 -- ============================================================
@@ -49,7 +49,7 @@ EXEC sp_add_job
     @description                = N'Checks the last run outcome of every enabled SQL Agent job. Sends an HTML email alert if any job last ended with Failed or Canceled.',
     @owner_login_name           = N'sa',
     @notify_level_email         = 2,
-    @notify_email_operator_name = N'Monitoring';
+    @notify_email_operator_name = N'JobMonitoring';
 PRINT 'Job "DBA - SQL Jobs Last Run Status Alert" created.';
 GO
 

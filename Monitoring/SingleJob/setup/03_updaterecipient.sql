@@ -13,6 +13,7 @@ DECLARE @Environment NVARCHAR(10);
 DECLARE @Recipients NVARCHAR(MAX);
 DECLARE @OperatorEmail NVARCHAR(256);
 DECLARE @Command NVARCHAR(MAX);
+DECLARE @OperatorName SYSNAME = N'JobMonitoring';
 
 SET @Environment = CASE
     WHEN @ServerName LIKE N'%UAT%' THEN N'UAT'
@@ -49,24 +50,34 @@ BEGIN
     RETURN;
 END;
 
-IF EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE [name] = N'Monitoring')
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE [name] = N'JobMonitoring')
 BEGIN
     EXEC msdb.dbo.sp_update_operator
-        @name = N'Monitoring',
+        @name = @OperatorName,
         @enabled = 1,
         @email_address = @OperatorEmail;
 
-    PRINT 'Operator "Monitoring" email updated: ' + @OperatorEmail;
+    PRINT 'Operator "JobMonitoring" email updated: ' + @OperatorEmail;
+END
+ELSE IF EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE [name] = N'Monitoring')
+BEGIN
+    EXEC msdb.dbo.sp_update_operator
+        @name = N'Monitoring',
+        @new_name = @OperatorName,
+        @enabled = 1,
+        @email_address = @OperatorEmail;
+
+    PRINT 'Operator "Monitoring" renamed to "JobMonitoring" and email updated: ' + @OperatorEmail;
 END
 ELSE
 BEGIN
     EXEC msdb.dbo.sp_add_operator
-        @name = N'Monitoring',
+        @name = @OperatorName,
         @enabled = 1,
         @email_address = @OperatorEmail,
         @category_name = N'[Uncategorized]';
 
-    PRINT 'Operator "Monitoring" created with email: ' + @OperatorEmail;
+    PRINT 'Operator "JobMonitoring" created with email: ' + @OperatorEmail;
 END;
 
 IF NOT EXISTS (
@@ -88,7 +99,13 @@ EXEC msdb.dbo.sp_update_jobstep
     @step_id = 1,
     @command = @Command;
 
+EXEC msdb.dbo.sp_update_job
+    @job_name = N'DBA - SQL Jobs Last Run Status Alert',
+    @notify_level_email = 2,
+    @notify_email_operator_name = @OperatorName;
+
 PRINT 'Environment detected: ' + @Environment;
 PRINT 'Recipients mapped: ' + @Recipients;
+PRINT 'Operator mapped: ' + @OperatorName + N' <' + @OperatorEmail + N'>';
 PRINT 'Job step command updated successfully.';
 GO
