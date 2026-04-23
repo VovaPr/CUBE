@@ -58,16 +58,27 @@ BEGIN
         @email_address = @OperatorEmail;
 
     PRINT 'Operator "JobMonitoring" email updated: ' + @OperatorEmail;
+
+    IF EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE [name] = N'Monitoring')
+    BEGIN
+        EXEC msdb.dbo.sp_delete_operator
+            @name = N'Monitoring';
+
+        PRINT 'Legacy operator "Monitoring" deleted.';
+    END;
 END
 ELSE IF EXISTS (SELECT 1 FROM msdb.dbo.sysoperators WHERE [name] = N'Monitoring')
 BEGIN
-    EXEC msdb.dbo.sp_update_operator
-        @name = N'Monitoring',
-        @new_name = @OperatorName,
-        @enabled = 1,
-        @email_address = @OperatorEmail;
+    EXEC msdb.dbo.sp_delete_operator
+        @name = N'Monitoring';
 
-    PRINT 'Operator "Monitoring" renamed to "JobMonitoring" and email updated: ' + @OperatorEmail;
+    EXEC msdb.dbo.sp_add_operator
+        @name = @OperatorName,
+        @enabled = 1,
+        @email_address = @OperatorEmail,
+        @category_name = N'[Uncategorized]';
+
+    PRINT 'Legacy operator "Monitoring" deleted. Operator "JobMonitoring" created with email: ' + @OperatorEmail;
 END
 ELSE
 BEGIN
