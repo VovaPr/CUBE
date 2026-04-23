@@ -22,6 +22,7 @@ DECLARE @AlertJobId UNIQUEIDENTIFIER;
 DECLARE @PollCounter INT;
 DECLARE @IsRunning INT;
 DECLARE @LastRunStatus INT;
+DECLARE @HistoryInstanceId INT;
 
 -- Keep script idempotent when re-run.
 IF EXISTS (SELECT 1 FROM msdb.dbo.sysjobs WHERE [name] = @TestJobName)
@@ -86,6 +87,11 @@ EXEC msdb.dbo.sp_add_jobserver
 
 PRINT N'Test job created: ' + @TestJobName;
 
+SELECT @HistoryInstanceId = ISNULL(MAX(h.instance_id), 0)
+FROM msdb.dbo.sysjobhistory h
+WHERE h.job_id = @TestJobId
+    AND h.step_id = 0;
+
 -- Run the test job and wait for completion.
 EXEC msdb.dbo.sp_start_job @job_name = @TestJobName;
 PRINT N'Test job started. Waiting for completion...';
@@ -121,12 +127,34 @@ BEGIN
     RETURN;
 END;
 
-SELECT TOP (1)
-    @LastRunStatus = h.run_status
-FROM msdb.dbo.sysjobhistory h
-WHERE h.job_id = @TestJobId
-  AND h.step_id = 0
-ORDER BY h.instance_id DESC;
+SET @PollCounter = 0;
+SET @LastRunStatus = NULL;
+WHILE @PollCounter < @MaxPolls
+BEGIN
+    SELECT TOP (1)
+         @LastRunStatus = h.run_status
+        ,@HistoryInstanceId = h.instance_id
+    FROM msdb.dbo.sysjobhistory h
+    WHERE h.job_id = @TestJobId
+      AND h.step_id = 0
+      AND h.instance_id > ISNULL(@HistoryInstanceId, 0)
+    ORDER BY h.instance_id DESC;
+
+    IF @LastRunStatus IS NOT NULL
+        BREAK;
+
+    SET @PollCounter += 1;
+    WAITFOR DELAY @PollDelay;
+END;
+
+IF @LastRunStatus IS NULL
+BEGIN
+    EXEC msdb.dbo.sp_delete_job
+        @job_name = @TestJobName,
+        @delete_unused_schedule = 1;
+    RAISERROR(N'Validation failed: no job-level history row was written for the test job in expected time.', 16, 1);
+    RETURN;
+END;
 
 IF @LastRunStatus NOT IN (0, 3)
 BEGIN
