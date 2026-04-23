@@ -15,6 +15,7 @@ DECLARE @TestJobName SYSNAME = N'DBA - Monitoring Alerts (TEST Failed job)';
 DECLARE @AlertJobName SYSNAME = N'DBA - SQL Jobs Last Run Status Alert';
 DECLARE @PollDelay NVARCHAR(12) = N'00:00:02';
 DECLARE @MaxPolls INT = 120; -- ~4 minutes
+DECLARE @CleanupTestJob BIT = 1; -- Set to 0 for troubleshooting to keep test job and its history visible.
 
 DECLARE @CurrentSessionId INT;
 DECLARE @TestJobId UNIQUEIDENTIFIER;
@@ -200,10 +201,18 @@ BEGIN
     WAITFOR DELAY @PollDelay;
 END;
 
-EXEC msdb.dbo.sp_delete_job
-    @job_name = @TestJobName,
-    @delete_unused_schedule = 1;
+IF @CleanupTestJob = 1
+BEGIN
+    EXEC msdb.dbo.sp_delete_job
+        @job_name = @TestJobName,
+        @delete_unused_schedule = 1;
 
-PRINT N'Test job deleted: ' + @TestJobName;
+    PRINT N'Test job deleted: ' + @TestJobName;
+END
+ELSE
+BEGIN
+    PRINT N'Test job preserved for troubleshooting: ' + @TestJobName;
+END;
+
 PRINT N'Validation step completed.';
 GO
