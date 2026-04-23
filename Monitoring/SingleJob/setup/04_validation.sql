@@ -6,7 +6,8 @@
 --   1) Test job "DBA - Monitoring Alerts (TEST Failed job)" is created.
 --   2) Test job is executed and expected to fail.
 --   3) Main alert job "DBA - SQL Jobs Last Run Status Alert" is executed.
---   4) Test job is removed.
+--   4) Database Mail is checked to confirm the alert email was sent.
+--   5) Test job is removed.
 
 USE [msdb];
 GO
@@ -24,6 +25,10 @@ DECLARE @PollCounter INT;
 DECLARE @IsRunning INT;
 DECLARE @LastRunStatus INT;
 DECLARE @HistoryInstanceId INT;
+DECLARE @ExpectedSubject NVARCHAR(256) = CAST(@@SERVERNAME AS NVARCHAR(128)) + N' SQL Jobs Last Run Status Alert';
+DECLARE @MailBaselineId INT;
+DECLARE @MailItemId INT;
+DECLARE @MailSentStatus NVARCHAR(20);
 
 -- Keep script idempotent when re-run.
 IF EXISTS (SELECT 1 FROM msdb.dbo.sysjobs WHERE [name] = @TestJobName)
@@ -177,6 +182,9 @@ BEGIN
     RETURN;
 END;
 
+SELECT @MailBaselineId = ISNULL(MAX(mailitem_id), 0)
+FROM msdb.dbo.sysmail_allitems;
+
 EXEC msdb.dbo.sp_start_job @job_name = @AlertJobName;
 PRINT N'Alert job started: ' + @AlertJobName;
 
@@ -200,6 +208,69 @@ BEGIN
     SET @PollCounter += 1;
     WAITFOR DELAY @PollDelay;
 END;
+
+SET @PollCounter = 0;
+SET @MailItemId = NULL;
+SET @MailSentStatus = NULL;
+WHILE @PollCounter < @MaxPolls
+BEGIN
+    SELECT TOP (1)
+         @MailItemId = ai.mailitem_id
+        ,@MailSentStatus = ai.sent_status
+    FROM msdb.dbo.sysmail_allitems ai
+    WHERE ai.mailitem_id > ISNULL(@MailBaselineId, 0)
+      AND ai.[subject] = @ExpectedSubject
+    ORDER BY ai.mailitem_id DESC;
+
+    IF @MailItemId IS NOT NULL AND @MailSentStatus = N'sent'
+        BREAK;
+
+    IF @MailItemId IS NOT NULL AND @MailSentStatus = N'failed'
+        BREAK;
+
+    SET @PollCounter += 1;
+    WAITFOR DELAY @PollDelay;
+END;
+
+IF @MailItemId IS NULL
+BEGIN
+    IF @CleanupTestJob = 1
+    BEGIN
+        EXEC msdb.dbo.sp_delete_job
+            @job_name = @TestJobName,
+            @delete_unused_schedule = 1;
+
+        PRINT N'Test job deleted: ' + @TestJobName;
+    END
+    ELSE
+    BEGIN
+        PRINT N'Test job preserved for troubleshooting: ' + @TestJobName;
+    END;
+
+    RAISERROR(N'Validation failed: no Database Mail item was created for the alert email.', 16, 1);
+    RETURN;
+END;
+
+IF @MailSentStatus <> N'sent'
+BEGIN
+    IF @CleanupTestJob = 1
+    BEGIN
+        EXEC msdb.dbo.sp_delete_job
+            @job_name = @TestJobName,
+            @delete_unused_schedule = 1;
+
+        PRINT N'Test job deleted: ' + @TestJobName;
+    END
+    ELSE
+    BEGIN
+        PRINT N'Test job preserved for troubleshooting: ' + @TestJobName;
+    END;
+
+    RAISERROR(N'Validation failed: Database Mail item was created but not sent successfully.', 16, 1);
+    RETURN;
+END;
+
+PRINT N'Alert email sent successfully. MailItemId=' + CAST(@MailItemId AS NVARCHAR(20));
 
 IF @CleanupTestJob = 1
 BEGIN
