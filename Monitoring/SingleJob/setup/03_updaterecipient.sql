@@ -36,7 +36,7 @@ VALUES
      (N'DEV',  N'DEV Monitoring - Database Team <eba2b854.cube.global@emea.teams.ms>', N'eba2b854.cube.global@emea.teams.ms')
     ,(N'TEST', N'TEST Monitoring - Database Team <7369ba4a.cube.global@emea.teams.ms>', N'7369ba4a.cube.global@emea.teams.ms')
     ,(N'UAT',  N'UAT Monitoring - Database Team <145871a8.cube.global@emea.teams.ms>', N'145871a8.cube.global@emea.teams.ms')
-    ,(N'PROD', N'Prod - SQL Errors and Long Running Queries - Database Team <61f17278.cube.global@emea.teams.ms>', N'61f17278.cube.global@emea.teams.ms');
+    ,(N'PROD', N'PROD Monitoring - Database Team <16c0ed2e.cube.global@emea.teams.ms>', N'16c0ed2e.cube.global@emea.teams.ms');
 
 SELECT
      @Recipients = r.Recipients
